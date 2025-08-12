@@ -4,70 +4,118 @@ const router = express.Router();
 const { calculateMultiPrice } = require('../pricing/calculateMulti');
 const factorData = require('../config/multiFactors.json');
 const { normalizeMetalType } = require('../utils/normalizeMetal');
+const tierCfg = require('../config/tier_pricing_factors'); // NEW
+
+// ---- Tier aliases (long → short used in your factors) ----
+const TIER_ALIAS = {
+  'elite': 'elite',
+  'value': 'val',
+  'value-gold': 'vg',
+  'value-silver': 'vs',
+  'builder': 'bul',
+  'homeowner': 'ho',
+  // already-short → short (no-op)
+  'val': 'val',
+  'vg': 'vg',
+  'vs': 'vs',
+  'bul': 'bul',
+  'ho': 'ho',
+};
+
+// Resolve tier + multiplier from tier_pricing_factors.json
+function resolveTierAndFactor(reqTier, injectedTier) {
+  const raw = (injectedTier || reqTier || 'elite').toString().toLowerCase();
+  const short = TIER_ALIAS[raw] || raw;
+
+  // Accept either { elite:1,... } or { tiers:{ elite:1,... } }
+  const table = (tierCfg && typeof tierCfg === 'object')
+    ? (tierCfg.tiers && typeof tierCfg.tiers === 'object' ? tierCfg.tiers : tierCfg)
+    : {};
+
+  const tryKeys = [short, raw, 'elite'];
+  let factor = 1.0;
+  for (const k of tryKeys) {
+    const v = table[k];
+    if (v != null && !Number.isNaN(+v)) { factor = +v; break; }
+  }
+
+  if (factor === 1.0 && !('elite' in table)) {
+    console.warn('⚠️  tier_pricing_factors missing or unrecognized; defaulting to 1.0');
+  }
+
+  return { tierKey: short, factor };
+}
 
 router.post('/calculate', (req, res) => {
   try {
     let { product, metalType, metal, tier } = req.body;
     if (!product) return res.status(400).json({ error: 'Missing product' });
 
-    // Normalize metal names
+    // Normalize metals
     metalType = normalizeMetalType(metalType);
     metal = normalizeMetalType(metal) || metalType;
-    const lowerProduct = product.toLowerCase();
-    const lowerTier = (tier || 'elite').toLowerCase();
 
-    console.log('📦 Multi-Flue Pricing Request:', lowerProduct, `(${metalType}, ${lowerTier})`);
+    const lowerProduct = String(product || '').toLowerCase();
 
-    // 🔹 Map payload to match calculateMultiPrice expectations
+    // 🔹 Resolve tier (prefer server-injected), get multiplier from JSON
+    const { tierKey: chosenTier, factor: tierMultiplier } = resolveTierAndFactor(tier, req.tier);
+
+    console.log('📦 Multi-Flue Pricing Request:', lowerProduct, `(${metalType}, tier=${chosenTier})`);
+
+    // 🔹 Map incoming payload to calculator’s expected input (keep your existing field names)
     const input = {
-      lengthVal: parseFloat(req.body.length) || 0,
-      widthVal: parseFloat(req.body.width) || 0,
-      screenVal: parseFloat(req.body.screen) || 0,
-      overhangVal: parseFloat(req.body.overhang) || 0,
-      insetVal: parseFloat(req.body.inset) || 0,
-      skirtVal: parseFloat(req.body.skirt) || 0,
-      pitchVal: parseFloat(req.body.pitch) || 0,
+      // dimensions (support both legacy & new keys if they exist in body)
+      lengthVal: parseFloat(req.body.length ?? req.body.lengthVal) || 0,
+      widthVal: parseFloat(req.body.width ?? req.body.widthVal) || 0,
+      screenVal: parseFloat(req.body.screen ?? req.body.screenVal) || 0,
+      lidOverhang: parseFloat(req.body.lidOverhang ?? req.body.lid_overhang ?? 0) || 0,
+      baseOverhang: parseFloat(req.body.baseOverhang ?? req.body.base_overhang ?? 0) || 0,
+      inset: parseFloat(req.body.inset ?? req.body.insetVal ?? 0) || 0,
+      holeCount: parseInt(req.body.holes ?? req.body.holeCount ?? 1, 10) || 1,
+
+      // identifiers
+      product: lowerProduct,
       metalType,
       metal,
-      product,
+
+      // pricing context
+      tier: chosenTier, // pass resolved tier to the calculator
     };
 
-    // 🔹 Find the matching factor row from flat JSON
-    const factorRow = factorData.find(f =>
-      f.metal.toLowerCase() === metalType &&
-      f.product.toLowerCase() === lowerProduct &&
-      f.tier.toLowerCase() === lowerTier
-    );
+    // 🔸 Run your advanced factor-based calculator
+    const result = calculateMultiPrice(input, factorData) || {};
 
-    if (!factorRow) {
-      return res.status(400).json({ error: `No factor found for ${product} (${metalType}, ${tier})` });
+    // ── Harmonize + supplement tier fields in the response without breaking existing behavior ──
+    // If the calculator already produced a tiered final price, respect it.
+    // Otherwise, apply our multiplier to an available base price.
+    const hasFinal = typeof result.finalPrice === 'number';
+    const baseCandidate =
+      typeof result.basePrice === 'number' ? result.basePrice
+      : typeof result.price === 'number' ? result.price
+      : typeof result.elitePrice === 'number' ? result.elitePrice
+      : null;
+
+    if (!hasFinal && baseCandidate != null) {
+      result.finalPrice = +(baseCandidate * tierMultiplier).toFixed(2);
     }
 
-    const baseFactor = factorRow.factor || 0;
-    const adjustments = factorRow.adjustments || {};
+    // Always expose normalized tier + multiplier for transparency
+    result.tier = result.tier || chosenTier;
+    if (typeof result.tierMultiplier !== 'number') {
+      result.tierMultiplier = +tierMultiplier.toFixed(6);
+    }
 
-    // 🔹 Tier multiplier - If JSON includes it, use it, otherwise fallback to 1
-    const tierMultiplier = factorRow.multiplier || 1;
+    // Optional: if your calculator exposes a baseFactor, provide tieredFactor for debugging
+    if (typeof result.baseFactor === 'number' && typeof result.tieredFactor !== 'number') {
+      result.tieredFactor = +(result.baseFactor * tierMultiplier).toFixed(6);
+    }
 
-    // 🔹 Calculate Multi-Flue Price
-    const result = calculateMultiPrice(input, adjustments, baseFactor, tierMultiplier, tier);
-
-    // 🔹 Log Result
-    console.log('💰 Multi-Flue Price Result:', {
-      product: result.product,
-      metalType: result.metalType,
-      length: result.lengthVal,
-      width: result.widthVal,
-      screen: result.screenVal,
-      overhang: result.overhangVal,
-      inset: result.insetVal,
-      skirt: result.skirtVal,
-      pitch: result.pitchVal,
-      baseFactor: result.baseFactor,
-      adjustedFactor: result.adjustedFactor,
+    // Log key outputs once
+    console.log('✅ Multi price result:', {
+      product: lowerProduct,
+      metal: metal,
       tier: result.tier,
       tierMultiplier: result.tierMultiplier,
-      tieredFactor: result.tieredFactor,
       finalPrice: result.finalPrice
     });
 

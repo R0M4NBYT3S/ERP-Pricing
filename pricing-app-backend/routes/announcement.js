@@ -1,37 +1,37 @@
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
+// routes/announcements.js
+const express = require("express");
+const fs = require("fs");
+const path = require("path");
 const router = express.Router();
 
-const announcementFile = path.join(__dirname, '../config/announcement.json');
+const FILE = path.join(__dirname, "..", "config", "announcements.json");
+function readAll() { try { return JSON.parse(fs.readFileSync(FILE, "utf8")); } catch { return []; } }
+function writeAll(list) {
+  fs.mkdirSync(path.dirname(FILE), { recursive: true });
+  fs.writeFileSync(FILE, JSON.stringify(list, null, 2));
+}
 
-// GET current announcement
-router.get('/', (req, res) => {
-  try {
-    const data = fs.readFileSync(announcementFile, 'utf8');
-    const json = JSON.parse(data);
-    res.json(json);
-  } catch (err) {
-    console.error('Error reading announcement file:', err);
-    res.status(500).json({ message: 'Error reading announcement' });
-  }
+// list
+router.get("/", (req, res) => { res.json(readAll()); });
+
+// create
+router.post("/", (req, res) => {
+  const { text } = req.body || {};
+  if (!text || !text.trim()) return res.status(400).json({ success: false, message: "text required" });
+  const all = readAll();
+  const ann = { id: Date.now(), text: String(text).trim() };
+  all.push(ann);
+  writeAll(all);
+  res.json({ success: true, announcement: ann });
 });
 
-// POST update announcement
-router.post('/', (req, res) => {
-  const { message } = req.body;
-  if (!message && message !== "") {
-    return res.status(400).json({ error: 'Message is required' });
-  }
-
-  const newData = { message };
-  try {
-    fs.writeFileSync(announcementFile, JSON.stringify(newData, null, 2), 'utf8');
-    res.json({ success: true, message: 'Announcement updated.' });
-  } catch (err) {
-    console.error('Error writing announcement file:', err);
-    res.status(500).json({ message: 'Error updating announcement' });
-  }
+// delete
+router.delete("/:id", (req, res) => {
+  const id = Number(req.params.id);
+  const all = readAll();
+  const next = all.filter(a => a.id !== id);
+  writeAll(next);
+  res.json({ success: true });
 });
 
 module.exports = router;

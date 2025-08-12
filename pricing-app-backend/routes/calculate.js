@@ -7,21 +7,53 @@ const { calculateShroud } = require('../pricing/calculateShroud');
 const { normalizeMetalType } = require('../utils/normalizeMetal');
 const factorData = require('../config/multiFactors.json');
 
+// ---- Load tier factors from master file ----
+let tierCfg = {};
+try {
+  // Accepts either:
+  //   { tiers: { elite:1, vg:1.11969, ... } }
+  // or { elite:1, vg:1.11969, ... }
+  tierCfg = require('../config/tier_pricing_factors');
+} catch {
+  console.warn('⚠️ tier_pricing_factors not found; defaulting to 1.0 multipliers');
+}
+
+const TIER_ALIAS = {
+  elite: 'elite',
+  value: 'val',
+  'value-gold': 'vg',
+  'value-silver': 'vs',
+  builder: 'bul',
+  homeowner: 'ho',
+  val: 'val',
+  vg: 'vg',
+  vs: 'vs',
+  bul: 'bul',
+  ho: 'ho'
+};
+
+function resolveTierAndFactor(tierInput) {
+  const raw = (tierInput || 'elite').toString().toLowerCase();
+  const short = TIER_ALIAS[raw] || raw;
+
+  const table = (tierCfg && typeof tierCfg === 'object')
+    ? (tierCfg.tiers && typeof tierCfg.tiers === 'object' ? tierCfg.tiers : tierCfg)
+    : {};
+
+  const tryKeys = [short, raw, 'elite'];
+  let factor = 1.0;
+  for (const k of tryKeys) {
+    const v = table[k];
+    if (v != null && !Number.isNaN(+v)) { factor = +v; break; }
+  }
+  return { tierKey: short, factor };
+}
+
 const shroudProducts = [
   'dynasty', 'princess', 'imperial', 'regal', 'majesty',
   'monarch', 'monaco', 'royale', 'temptress', 'durham',
   'centurion', 'prince', 'emperor'
 ];
-
-// Customer tier multipliers for Multi-Flue
-const tierMultipliers = {
-  elite: 1.0,
-  vg: 1.11969,
-  vs: 1.181895,
-  val: 1.2441,
-  bul: 1.3299,
-  ho: 1.43
-};
 
 router.post('/', (req, res) => {
   try {
@@ -31,7 +63,6 @@ router.post('/', (req, res) => {
     metalType = normalizeMetalType(metalType);
     metal = normalizeMetalType(metal) || metalType;
     const lowerProduct = product.toLowerCase();
-    const lowerTier = (tier || 'elite').toLowerCase();
 
     // Build a uniform input object
     const input = {
@@ -69,7 +100,7 @@ router.post('/', (req, res) => {
     ) {
       console.log('➡️ Routing to calculateMultiPrice');
 
-      // Always look up the ELITE factor row, then apply tierMultipliers
+      // Always look up the ELITE factor row from multiFactors, then apply the tier factor from master tier file
       const factorRow = factorData.find(f =>
         f.metal.toLowerCase() === metalType &&
         f.product.toLowerCase() === lowerProduct &&
@@ -84,11 +115,11 @@ router.post('/', (req, res) => {
       const baseFactor = factorRow.factor || 0;
       const adjustments = factorRow.adjustments || {};
 
-      // Fetch multiplier for the selected tier
-      const tierMul = tierMultipliers[lowerTier] || 1.0;
+      // Pull multiplier from master tier file
+      const { tierKey, factor: tierMul } = resolveTierAndFactor(tier);
 
       // Perform calculation
-      result = calculateMultiPrice(input, adjustments, baseFactor, tierMul, lowerTier);
+      result = calculateMultiPrice(input, adjustments, baseFactor, tierMul, tierKey);
       console.log('💰 Calculated Multi-Flue Price:', result);
     }
 

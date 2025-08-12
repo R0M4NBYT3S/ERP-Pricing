@@ -5,30 +5,11 @@
     "tier": "elite",
     "factor": 6.65,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 0.26
-      },
-      "inset": {
-        "standard": 2.5,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "skirt": {
-        "standard": 4.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "pitch": {
-        "below": 0.0,
-        "above": 0.0
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 2.5, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 4.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": 0.0, "above": 0.0 }
     }
   },
   {
@@ -37,628 +18,378 @@
     "tier": "elite",
     "factor": 4.4172,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 0.26
-      },
-      "inset": {
-        "standard": 2.5,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "skirt": {
-        "standard": 4.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "pitch": {
-        "below": 0.0,
-        "above": 0.0
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 2.5, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 4.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": 0.0, "above": 0.0 }
     }
   },
   {
     "metal": "kynar",
     "product": "flat_top_outside_mount",
     "tier": "elite",
-    "factor": 3.71,
+    "factor": 5.53,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 0.26
-      },
-      "inset": {
-        "standard": 2.5,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "skirt": {
-        "standard": 4.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "pitch": {
-        "below": 0.0,
-        "above": 0.0
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 2.5, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 4.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": 0.0, "above": 0.0 }
     }
   },
   {
     "metal": "ss24pol",
     "product": "flat_top_top_mount",
     "tier": "elite",
-    "factor": 4.92,
+    "factor": 6.54,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 0.26
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "pitch": {
-        "below": 0.0,
-        "above": 0.0
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "pitch": { "below": 0.0, "above": 0.0 }
     }
   },
   {
     "metal": "black_galvanized",
     "product": "flat_top_top_mount",
     "tier": "elite",
-    "factor": 4.03,
+    "factor": 4.4003,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 0.26
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "pitch": {
-        "below": 0.0,
-        "above": 0.0
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "pitch": { "below": 0.0, "above": 0.0 }
     }
   },
   {
     "metal": "kynar",
     "product": "flat_top_top_mount",
     "tier": "elite",
-    "factor": 3.78,
+    "factor": 5.50,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 0.26
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "pitch": {
-        "below": 0.0,
-        "above": 0.0
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "pitch": { "below": 0.0, "above": 0.0 }
     }
   },
   {
     "metal": "ss24pol",
     "product": "hip_and_ridge_outside_mount",
     "tier": "elite",
-    "factor": 7.36,
+    "factor": 6.65,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 1.66
-      },
-      "inset": {
-        "standard": 2.5,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "skirt": {
-        "standard": 4.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 1.66 },
+      "inset": { "standard": 2.5, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 4.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": -0.07, "above": 0.15 }
     }
   },
   {
     "metal": "black_galvanized",
     "product": "hip_and_ridge_outside_mount",
     "tier": "elite",
-    "factor": 5.71,
+    "factor": 4.4172,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 1.66
-      },
-      "inset": {
-        "standard": 2.5,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "skirt": {
-        "standard": 4.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 1.66 },
+      "inset": { "standard": 2.5, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 4.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": -0.07, "above": 0.15 }
     }
   },
   {
     "metal": "kynar",
     "product": "hip_and_ridge_outside_mount",
     "tier": "elite",
-    "factor": 5.3,
+    "factor": 5.53,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 1.66
-      },
-      "inset": {
-        "standard": 2.5,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "skirt": {
-        "standard": 4.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 1.66 },
+      "inset": { "standard": 2.5, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 4.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": -0.07, "above": 0.15 }
     }
   },
   {
     "metal": "ss24pol",
     "product": "hip_and_ridge_top_mount",
     "tier": "elite",
-    "factor": 7.49,
+    "factor": 6.54,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 1.66
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 1.66 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "pitch": { "below": -0.07, "above": 0.15 }
     }
   },
   {
     "metal": "black_galvanized",
     "product": "hip_and_ridge_top_mount",
     "tier": "elite",
-    "factor": 5.89,
+    "factor": 4.4003,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 1.66
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 1.66 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "pitch": { "below": -0.07, "above": 0.15 }
     }
   },
   {
     "metal": "kynar",
     "product": "hip_and_ridge_top_mount",
     "tier": "elite",
-    "factor": 4.93,
+    "factor": 5.50,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 1.66
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
-    }
-  },
-  {
-    "metal": "ss24pol",
-    "product": "hip_top_mount",
-    "tier": "elite",
-    "factor": 9.91,
-    "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 0.26
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
-    }
-  },
-  {
-    "metal": "black_galvanized",
-    "product": "hip_top_mount",
-    "tier": "elite",
-    "factor": 7.05,
-    "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 0.26
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
-    }
-  },
-  {
-    "metal": "kynar",
-    "product": "hip_top_mount",
-    "tier": "elite",
-    "factor": 5.92,
-    "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 0.26
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.0
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 1.66 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "pitch": { "below": -0.07, "above": 0.15 }
     }
   },
   {
     "metal": "ss24pol",
     "product": "hip_outside_mount",
     "tier": "elite",
-    "factor": 10.41,
+    "factor": 6.65,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 0.26
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": -0.07, "above": 0.15 }
     }
   },
   {
     "metal": "black_galvanized",
     "product": "hip_outside_mount",
     "tier": "elite",
-    "factor": 7.5,
+    "factor": 4.4172,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 0.26
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": -0.07, "above": 0.15 }
     }
   },
   {
     "metal": "kynar",
     "product": "hip_outside_mount",
+    "tier": "elite",
+    "factor": 5.53,
+    "adjustments": {
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": -0.07, "above": 0.15 }
+    }
+  },
+  {
+    "metal": "ss24pol",
+    "product": "hip_top_mount",
+    "tier": "elite",
+    "factor": 6.54,
+    "adjustments": {
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "pitch": { "below": -0.07, "above": 0.15 }
+    }
+  },
+  {
+    "metal": "black_galvanized",
+    "product": "hip_top_mount",
+    "tier": "elite",
+    "factor": 4.4003,
+    "adjustments": {
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "pitch": { "below": -0.07, "above": 0.15 }
+    }
+  },
+  {
+    "metal": "kynar",
+    "product": "hip_top_mount",
+    "tier": "elite",
+    "factor": 5.50,
+    "adjustments": {
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "pitch": { "below": -0.07, "above": 0.15 }
+    }
+  },
+
+  {
+    "metal": "g90",
+    "product": "flat_top_outside_mount",
+    "tier": "elite",
+    "factor": 4.96,
+    "adjustments": {
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 2.5, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 4.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": 0.0, "above": 0.0 }
+    }
+  },
+  {
+    "metal": "g90",
+    "product": "flat_top_top_mount",
+    "tier": "elite",
+    "factor": 4.86,
+    "adjustments": {
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "pitch": { "below": 0.0, "above": 0.0 }
+    }
+  },
+  {
+    "metal": "g90",
+    "product": "flat_top_corbel",
+    "tier": "elite",
+    "factor": 7.15,
+    "adjustments": {
+      "screen": 0.13,
+      "overhang": 0.26,
+      "inset": 0.15,
+      "skirt": 0.15,
+      "pitchUnder": -0.07,
+      "pitchOver": 0.15,
+      "corbel": 0.15
+    }
+  },
+  {
+    "metal": "g90",
+    "product": "hip_and_ridge_outside_mount",
+    "tier": "elite",
+    "factor": 6.1,
+    "adjustments": {
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 1.66 },
+      "inset": { "standard": 2.5, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 4.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": -0.07, "above": 0.15 }
+    }
+  },
+  {
+    "metal": "g90",
+    "product": "hip_and_ridge_top_mount",
     "tier": "elite",
     "factor": 6.6,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 0.26
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 1.66 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "pitch": { "below": -0.07, "above": 0.15 }
+    }
+  },
+  {
+    "metal": "g90",
+    "product": "hip_and_ridge_corbel",
+    "tier": "elite",
+    "factor": 7.95,
+    "adjustments": {
+      "screen": 0.13,
+      "overhang": 0.26,
+      "inset": 0.15,
+      "skirt": 0.15,
+      "pitchUnder": -0.07,
+      "pitchOver": 0.15,
+      "corbel": 0.15
+    }
+  },
+  {
+    "metal": "g90",
+    "product": "hip_outside_mount",
+    "tier": "elite",
+    "factor": 8.46,
+    "adjustments": {
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": -0.07, "above": 0.15 }
+    }
+  },
+  {
+    "metal": "g90",
+    "product": "hip_top_mount",
+    "tier": "elite",
+    "factor": 7.96,
+    "adjustments": {
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "skirt": { "standard": 0.0, "interval": 0.5, "rate": 0.0 },
+      "pitch": { "below": -0.07, "above": 0.15 }
+    }
+  },
+
+  {
+    "metal": "g90",
+    "product": "hip_and_ridge_outside_mount_standing_seam",
+    "tier": "elite",
+    "factor": 7.27,
+    "adjustments": {
+      "screen": 0.13,
+      "overhang": 0.26,
+      "inset": 0.15,
+      "skirt": 0.15,
+      "pitchUnder": -0.07,
+      "pitchOver": 0.15,
+      "corbel": 0.15
+    }
+  },
+  {
+    "metal": "kynar",
+    "product": "hip_and_ridge_outside_mount_standing_seam",
+    "tier": "elite",
+    "factor": 5.97,
+    "adjustments": {
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 2.5, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 4.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": -0.07, "above": 0.15 }
     }
   },
   {
     "metal": "ss24pol",
     "product": "hip_and_ridge_outside_mount_standing_seam",
     "tier": "elite",
-    "factor": 8.94,
+    "factor": 6.65,
     "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 1.66
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
+      "screen": { "standard": 10.0, "interval": 2.0, "rate": 0.13 },
+      "overhang": { "standard": 5.0, "interval": 1.0, "rate": 0.26 },
+      "inset": { "standard": 2.5, "interval": 0.5, "rate": 0.15 },
+      "skirt": { "standard": 4.0, "interval": 0.5, "rate": 0.15 },
+      "pitch": { "below": -0.07, "above": 0.15 }
     }
   },
-  {
-    "metal": "kynar",
-    "product": "hip_and_ridge_outside_mount_standing_seam",
-    "tier": "elite",
-    "factor": 6.96,
-    "adjustments": {
-      "screen": {
-        "standard": 10.0,
-        "interval": 2.0,
-        "rate": 0.13
-      },
-      "overhang": {
-        "standard": 5.0,
-        "interval": 1.0,
-        "rate": 1.66
-      },
-      "inset": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "skirt": {
-        "standard": 0.0,
-        "interval": 0.5,
-        "rate": 0.15
-      },
-      "pitch": {
-        "below": -0.07,
-        "above": 0.15
-      }
-    }
-  },
+
   {
     "metal": "stainless steel",
-    "product": "flat top corbel",
+    "product": "flat_top_corbel",
     "tier": "elite",
-    "factor": 7.87,
-    "adjustments": {
-      "screen": 0.13,
-      "overhang": 0.26,
-      "inset": 0.15,
-      "skirt": 0.15,
-      "pitchUnder": -0.07,
-      "pitchOver": 0.15,
-      "corbel": 0.15
-    }
-  },
-  {
-    "metal": "g90",
-    "product": "flat top corbel",
-    "tier": "elite",
-    "factor": 6.67,
+    "factor": 8.77,
     "adjustments": {
       "screen": 0.13,
       "overhang": 0.26,
@@ -671,9 +402,9 @@
   },
   {
     "metal": "kynar",
-    "product": "flat top corbel",
+    "product": "flat_top_corbel",
     "tier": "elite",
-    "factor": 5.7,
+    "factor": 7.31,
     "adjustments": {
       "screen": 0.13,
       "overhang": 0.26,
@@ -686,24 +417,9 @@
   },
   {
     "metal": "stainless steel",
-    "product": "hip and ridge corbel",
+    "product": "hip_and_ridge_corbel",
     "tier": "elite",
-    "factor": 9.94,
-    "adjustments": {
-      "screen": 0.13,
-      "overhang": 0.26,
-      "inset": 0.15,
-      "skirt": 0.15,
-      "pitchUnder": -0.07,
-      "pitchOver": 0.15,
-      "corbel": 0.15
-    }
-  },
-  {
-    "metal": "g90",
-    "product": "hip and ridge corbel",
-    "tier": "elite",
-    "factor": 8.51,
+    "factor": 10.28,
     "adjustments": {
       "screen": 0.13,
       "overhang": 0.26,
@@ -716,24 +432,9 @@
   },
   {
     "metal": "kynar",
-    "product": "hip and ridge corbel",
+    "product": "hip_and_ridge_corbel",
     "tier": "elite",
-    "factor": 7.43,
-    "adjustments": {
-      "screen": 0.13,
-      "overhang": 0.26,
-      "inset": 0.15,
-      "skirt": 0.15,
-      "pitchUnder": -0.07,
-      "pitchOver": 0.15,
-      "corbel": 0.15
-    }
-  },
-  {
-    "metal": "g90",
-    "product": "hip and ridge outside mount standing seams",
-    "tier": "elite",
-    "factor": 7.27,
+    "factor": 8.56,
     "adjustments": {
       "screen": 0.13,
       "overhang": 0.26,

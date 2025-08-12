@@ -1,7 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { productConfig, productAliases } from '../config/productConfig';
 
-const API_BASE = "http://192.168.0.73:3001";
+// 🔧 Use env var if provided, else the current host (works on LAN, localhost, prod), fallback to old IP
+const API_BASE =
+  (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE) ||
+  `${window.location.protocol}//${window.location.hostname}:3001` ||
+  'http://192.168.0.73:3001';
 
 function DynamicForm() {
   const [tier, setTier] = useState('');
@@ -14,20 +18,20 @@ function DynamicForm() {
   const [announcement, setAnnouncement] = useState('');
 
   useEffect(() => {
-    const eventSource = new EventSource(`${API_BASE}/api/announcements/live`);
-
-    eventSource.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      setAnnouncement(data.text || '');
-    };
-
-    eventSource.onerror = () => {
-      console.warn('SSE connection lost, retrying…');
-    };
-
-    return () => {
-      eventSource.close();
-    };
+    let es;
+    try {
+      es = new EventSource(`${API_BASE}/api/announcements/live`);
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          setAnnouncement(data?.text || '');
+        } catch {}
+      };
+      es.onerror = () => {
+        try { es.close(); } catch {}
+      };
+    } catch {}
+    return () => { try { es && es.close(); } catch {} };
   }, []);
 
   const tierOptions = [
@@ -114,6 +118,16 @@ function DynamicForm() {
     setFormData(prev => ({ ...prev, [field]: parsedValue }));
   };
 
+  const mapTierToBackend = (t) => {
+    if (!t || t === 'divider') return '';
+    const lc = t.toLowerCase();
+    const known = new Set(['elite', 'vg', 'vs', 'val', 'bul', 'ho']);
+    if (known.has(lc)) return lc;
+    const parts = lc.split('_');
+    const suffix = parts[parts.length - 1];
+    return known.has(suffix) ? suffix : 'elite';
+  };
+
   const calculatePrice = async () => {
     if (!tier || tier === 'divider') return alert('Please select a valid tier');
     if (!product) return alert('Please select a product');
@@ -123,8 +137,9 @@ function DynamicForm() {
     const metalTypeBackend = metalEntry?.backendValue || '';
 
     const backendProduct = productAliases[product] || product;
+
     const payload = {
-      tier,
+      tier: mapTierToBackend(tier),
       product: backendProduct,
       metal: metalTypeBackend,
       metalType,
@@ -133,8 +148,13 @@ function DynamicForm() {
     };
 
     productDef.fields.forEach(field => {
-      payload[field] = parseFloat(formData[field]) || formData[field];
+      const raw = formData[field];
+      const num = parseFloat(raw);
+      payload[field] = Number.isFinite(num) ? num : raw;
     });
+
+    // 🔍 Debug so you can see exactly what’s being sent and where
+    console.log('[CALC] POST', `${API_BASE}/api/calculate`, payload);
 
     try {
       const response = await fetch(`${API_BASE}/api/calculate`, {
@@ -143,8 +163,11 @@ function DynamicForm() {
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
+      console.log('[CALC] Response status:', response.status);
+
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
+        console.warn('[CALC] Non-OK response:', data);
         setPrice(null);
         return;
       }
@@ -196,7 +219,6 @@ function DynamicForm() {
 
   return (
     <div className="relative min-h-screen bg-gray-100 flex items-center justify-center px-4 py-12">
-      {/* 🔹 Live Announcement Banner */}
       {announcement && (
         <div className="fixed bottom-0 left-0 w-full bg-blue-200 text-blue-900 font-bold text-center py-2 z-50 shadow-md">
           {announcement}
@@ -221,7 +243,6 @@ function DynamicForm() {
 
         <div className="h-4" />
 
-        {/* Tier Select */}
         <select
           value={tier}
           onChange={(e) => setTier(e.target.value === 'divider' ? '' : e.target.value)}
@@ -234,7 +255,6 @@ function DynamicForm() {
 
         <div className="h-4" />
 
-        {/* Product Select */}
         <select
           value={product}
           onChange={(e) => {
@@ -268,7 +288,6 @@ function DynamicForm() {
 
         <div className="h-4" />
 
-        {/* Metal Select */}
         <select
           value={metalType}
           onChange={(e) => setMetalType(e.target.value)}
@@ -281,7 +300,6 @@ function DynamicForm() {
 
         <div className="h-4" />
 
-        {/* Dynamic Fields */}
         {(productConfig.products[product]?.fields || [])
           .filter((field) => field && !['holes', 'holecount'].includes(field.toLowerCase()))
           .map((field) => {
@@ -307,7 +325,6 @@ function DynamicForm() {
             );
         })}
 
-        {/* Hole Count + Unsquare for Chase Covers */}
         {product === 'chase_cover' && (
           <>
             <div className="w-full mb-4 flex flex-col items-center">

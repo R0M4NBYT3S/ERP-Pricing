@@ -1,3 +1,22 @@
-{
-  "message": "⚠️ No current announcements."
-}
+[
+  {
+    "id": 1754938598014,
+    "text": "⚠️ No current announcements."
+  },
+  {
+    "id": 1754938598014,
+    "text": "App is currently in development. See John to make possible changes!"
+  },
+  {
+    "id": 1755016635283,
+    "text": "hello world",
+    "by": "testuser",
+    "ts": 1755016635283
+  },
+  {
+    "id": 1755016940608,
+    "text": "hello from admin",
+    "by": "testuser",
+    "ts": 1755016940609
+  }
+]

@@ -1,202 +1,139 @@
+// routes/admin.js
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
 const router = express.Router();
 
-// ========================
-//  📂 Announcements Setup
-// ========================
-const announcementsFile = path.join(__dirname, '../announcement.json');
-
-function loadAnnouncements() {
-  if (!fs.existsSync(announcementsFile)) return [];
-  try {
-    const data = fs.readFileSync(announcementsFile, 'utf-8');
-    return JSON.parse(data || '[]');
-  } catch (err) {
-    console.error('Error reading announcements file:', err);
-    return [];
-  }
+// --- Mount announcements under /api/admin/announcements for Admin UI ---
+try {
+  // This uses your robust announcements router (with SSE + tolerant POST)
+  const announcementsRouter = require('./announcements');
+  router.use('/announcements', announcementsRouter);
+  console.log('✅ /api/admin/announcements mounted via routes/announcements.js');
+} catch (e) {
+  console.warn('ℹ️ routes/announcements.js not found; admin announcements disabled.');
 }
 
-function saveAnnouncements(data) {
-  fs.writeFileSync(announcementsFile, JSON.stringify(data, null, 2));
+// --- Master data files ---
+const FACTORS_PATH = path.join(__dirname, '..', 'config', 'multiFactors.json');
+const SHROUD_OVERRIDES_PATH = path.join(__dirname, '..', 'config', 'shroud_overrides.json');
+
+// Unified shroud base (JS module). We won't write to this file; we persist overrides separately.
+const { metals } = require('../config/shroudUnified');
+
+// ---- Helpers ----
+function readJsonSafe(p, fallback) {
+  try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fallback; }
+}
+function writeJsonSafe(p, obj) {
+  fs.writeFileSync(p, JSON.stringify(obj, null, 2), 'utf8');
 }
 
-// ✅ GET all announcements
-router.get('/announcements', (req, res) => {
-  res.json(loadAnnouncements());
+// ---------- AUTH (placeholder) ----------
+router.post('/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) return res.status(400).json({ message: 'Missing credentials' });
+  return res.json({ ok: true, user: username });
 });
 
-// ✅ POST add a new announcement
-router.post('/announcements', (req, res) => {
-  const { text } = req.body;
-  if (!text || !text.trim()) {
-    return res.status(400).json({ success: false, message: 'Text is required' });
+// ---------- MULTI-FACTORS ----------
+/**
+ * UI expects nested:
+ * { metal: { product: { factor, adjustments } } }
+ * Stored canonically as array rows in config/multiFactors.json (tier='elite')
+ */
+router.get('/factors', (_req, res) => {
+  const rows = readJsonSafe(FACTORS_PATH, []);
+  const out = {};
+  for (const r of rows) {
+    if (!r || (r.tier && r.tier.toLowerCase() !== 'elite')) continue;
+    const metal = (r.metal || '').toLowerCase();
+    const product = (r.product || '').toLowerCase();
+    if (!metal || !product) continue;
+    out[metal] = out[metal] || {};
+    out[metal][product] = {
+      factor: typeof r.factor === 'number' ? r.factor : 0,
+      adjustments: r.adjustments || {}
+    };
+  }
+  res.json(out);
+});
+
+router.post('/factors', (req, res) => {
+  const { metal, product, factor, adjustments } = req.body || {};
+  const metalKey = (metal || '').toLowerCase();
+  const productKey = (product || '').toLowerCase();
+
+  if (!metalKey || !productKey) {
+    return res.status(400).json({ success: false, message: 'Missing metal/product' });
+  }
+  if (typeof factor !== 'number' || Number.isNaN(factor)) {
+    return res.status(400).json({ success: false, message: 'Invalid factor' });
   }
 
-  const announcements = loadAnnouncements();
-  const newAnnouncement = {
-    id: Date.now(),
-    text: text.trim(),
-    timestamp: new Date().toISOString(),
+  const rows = readJsonSafe(FACTORS_PATH, []);
+  const tier = 'elite';
+
+  let idx = rows.findIndex(r =>
+    r &&
+    (r.tier || 'elite').toLowerCase() === 'elite' &&
+    (r.metal || '').toLowerCase() === metalKey &&
+    (r.product || '').toLowerCase() === productKey
+  );
+
+  const row = {
+    metal: metalKey,
+    product: productKey,
+    tier,
+    factor: factor,
+    adjustments: adjustments || {}
   };
 
-  announcements.push(newAnnouncement);
-  saveAnnouncements(announcements);
+  if (idx >= 0) rows[idx] = row; else rows.push(row);
 
-  res.json({ success: true, announcement: newAnnouncement });
+  writeJsonSafe(FACTORS_PATH, rows);
+  return res.json({ success: true });
 });
 
-// ✅ DELETE an announcement
-router.delete('/announcements/:id', (req, res) => {
-  const id = Number(req.params.id);
-  let announcements = loadAnnouncements();
-  const initialLength = announcements.length;
-
-  announcements = announcements.filter((a) => a.id !== id);
-
-  if (announcements.length === initialLength) {
-    return res.status(404).json({ success: false, message: 'Not found' });
+// ---------- SHROUDS (prices) ----------
+router.get('/shrouds', (_req, res) => {
+  const base = {};
+  for (const metal of Object.keys(metals)) {
+    base[metal] = metals[metal].prices || {};
   }
-
-  saveAnnouncements(announcements);
-  res.json({ success: true });
-});
-
-// ========================
-//  📂 Multi-Flue Factors
-// ========================
-const factorsPath = path.join(__dirname, '../config/multiFactors.json');
-
-// ✅ GET all factors with adjustments (nested by metal → product)
-router.get('/factors', (req, res) => {
-  try {
-    const rawData = fs.readFileSync(factorsPath, 'utf-8');
-    const factorsArray = JSON.parse(rawData);
-    const transformed = {};
-    factorsArray.forEach((entry) => {
-      const metal = entry.metal || entry.metalType;
-      const product = entry.product || entry.productSent;
-      if (!metal || !product) return;
-      if (!transformed[metal]) transformed[metal] = {};
-      transformed[metal][product] = {
-        factor: entry.factor || entry.baseFactor || 0,
-        adjustments: entry.adjustments || {}
-      };
-    });
-    res.json(transformed);
-  } catch (err) {
-    console.error('Error reading factors file:', err);
-    res.status(500).json({ error: 'Failed to read factors' });
-  }
-});
-
-// ✅ POST update a single multi‑flue factor and its adjustments
-router.post('/factors', (req, res) => {
-  const { metal, product, factor, adjustments } = req.body;
-  if (!metal || !product || (factor !== undefined && isNaN(factor))) {
-    return res.status(400).json({ success: false, message: 'Invalid payload' });
-  }
-  try {
-    const rawData = fs.readFileSync(factorsPath, 'utf-8');
-    const factorsArray = JSON.parse(rawData);
-    const entry = factorsArray.find(
-      (f) =>
-        (f.metal === metal || f.metalType === metal) &&
-        (f.product === product || f.productSent === product)
-    );
-    if (entry) {
-      if (factor !== undefined) {
-        entry.factor = Number(factor);
-        entry.baseFactor = Number(factor);
-      }
-      if (adjustments && typeof adjustments === 'object') {
-        entry.adjustments = adjustments;
-      }
-    } else {
-      // Create default adjustments if none provided
-      const defaultAdjustments = {
-        screen: { standard: 0, interval: 0, rate: 0 },
-        overhang: { standard: 0, interval: 0, rate: 0 },
-        inset: { standard: 0, interval: 0, rate: 0 },
-        skirt: { standard: 0, interval: 0, rate: 0 },
-        pitch: { below: 0, above: 0 }
-      };
-      factorsArray.push({
-        metal,
-        product,
-        tier: 'elite',
-        factor: Number(factor) || 0,
-        baseFactor: Number(factor) || 0,
-        adjustments: adjustments || defaultAdjustments
-      });
+  const overrides = readJsonSafe(SHROUD_OVERRIDES_PATH, {});
+  const merged = JSON.parse(JSON.stringify(base));
+  for (const m of Object.keys(overrides || {})) {
+    merged[m] = merged[m] || {};
+    for (const prod of Object.keys(overrides[m] || {})) {
+      merged[m][prod] = { ...(merged[m][prod] || {}), ...(overrides[m][prod] || {}) };
     }
-    fs.writeFileSync(factorsPath, JSON.stringify(factorsArray, null, 2));
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Error saving factors file:', err);
-    res.status(500).json({ error: 'Failed to save factor' });
   }
+  res.json(merged);
 });
 
-// ========================
-//  📂 Shroud Pricing Setup
-// ========================
-//
-// The admin panel should update the actual per‑size shroud pricing.  Those
-// prices live in `config/shroudPrices.js` (not in `shroudPricing.js`, which
-// only contains size cutoffs and rules).  We read and write that file
-// whenever shroud prices are requested or updated.
-
-// Path to the canonical shroud prices.  If the module exports a
-// `pricingRules` property (legacy support), we use that; otherwise the
-// exported object is the data itself.
-const shroudPricesPath = path.join(__dirname, '../config/shroudPrices.js');
-
-// ✅ GET shroud prices
-router.get('/shrouds', (req, res) => {
-  try {
-    // Always clear the cache so we get the latest file on each request
-    delete require.cache[require.resolve(shroudPricesPath)];
-    const rawData = require(shroudPricesPath);
-    const normalized = rawData.pricingRules || rawData;
-    res.json(normalized);
-  } catch (err) {
-    console.error('Error reading shroudPrices.js:', err);
-    res.status(500).json({ error: 'Failed to read shrouds' });
-  }
-});
-
-// ✅ POST update shroud price
 router.post('/shrouds', (req, res) => {
-  const { metal, product, size, newPrice } = req.body;
-  if (!metal || !product || !size || isNaN(newPrice)) {
-    return res.status(400).json({ success: false, message: 'Invalid payload' });
+  const { metal, product, size, newPrice } = req.body || {};
+  const m = (metal || '').toLowerCase();
+  const p = (product || '').toLowerCase();
+  const s = (size || '').toLowerCase();
+
+  if (!m || !p || !s) {
+    return res.status(400).json({ success: false, message: 'Missing metal/product/size' });
   }
-  try {
-    // Read the current prices
-    delete require.cache[require.resolve(shroudPricesPath)];
-    const rawData = require(shroudPricesPath);
-    const shroudData = rawData.pricingRules || rawData;
-
-    // Ensure nested objects exist
-    if (!shroudData[metal]) shroudData[metal] = {};
-    if (!shroudData[metal][product]) shroudData[metal][product] = {};
-
-    // Update the price
-    shroudData[metal][product][size] = Number(newPrice);
-
-    // Write back to the file without the `pricingRules` wrapper
-    const content = 'module.exports = ' + JSON.stringify(shroudData, null, 2) + ';';
-    fs.writeFileSync(shroudPricesPath, content, 'utf-8');
-
-    res.json({ success: true, updated: { metal, product, size, newPrice: Number(newPrice) } });
-  } catch (err) {
-    console.error('Error updating shroudPrices.js:', err);
-    res.status(500).json({ success: false, message: 'Failed to update shroud price' });
+  if (typeof newPrice !== 'number' || Number.isNaN(newPrice)) {
+    return res.status(400).json({ success: false, message: 'Invalid price' });
   }
+
+  const overrides = readJsonSafe(SHROUD_OVERRIDES_PATH, {});
+  overrides[m] = overrides[m] || {};
+  overrides[m][p] = overrides[m][p] || {};
+  overrides[m][p][s] = newPrice;
+
+  writeJsonSafe(SHROUD_OVERRIDES_PATH, overrides);
+
+  return res.json({ success: true, message: 'Price updated' });
 });
 
 module.exports = router;

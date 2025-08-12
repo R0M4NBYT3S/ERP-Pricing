@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const router = express.Router();
 
-// Load metal prices
+// Load metal prices (left as-is for your current logic/debug)
 const metalPricesPath = path.resolve(__dirname, '../config/metal-prices.json');
 const metalPrices = JSON.parse(fs.readFileSync(metalPricesPath, 'utf-8'));
 console.log("✅ Loaded metal-prices.json from:", metalPricesPath);
@@ -13,22 +13,69 @@ console.log("🔍 Available metals:", Object.keys(metalPrices));
 // Load chase cover matrixes and pricing
 const chaseCoverMatrix = require('../config/chaseCoverMatrix');
 
-// Tier multipliers (applied AFTER elite base price)
-const tierMultipliers = {
-  elite: 1.0,
-  vg: 1.11969,
-  vs: 1.181895,
-  val: 1.2441,
-  bul: 1.3299,
-  ho: 1.43
+// NEW: Load tier factors from JSON
+const tierCfg = require('../config/tier_pricing_factors');
+
+// Tier alias mapping (long → short keys used in your factors)
+const TIER_ALIAS = {
+  elite: 'elite',
+  value: 'val',
+  'value-gold': 'vg',
+  'value-silver': 'vs',
+  builder: 'bul',
+  homeowner: 'ho',
+  // already-short → short (no-op)
+  val: 'val',
+  vg: 'vg',
+  vs: 'vs',
+  bul: 'bul',
+  ho: 'ho',
 };
+
+// Resolve tier + multiplier from tier_pricing_factors.json
+function resolveTierAndFactor(reqTier, injectedTier) {
+  const raw = (injectedTier || reqTier || 'elite').toString().toLowerCase();
+  const short = TIER_ALIAS[raw] || raw;
+
+  // Accept either { elite:1,... } or { tiers:{ elite:1,... } }
+  const table =
+    tierCfg && typeof tierCfg === 'object'
+      ? (tierCfg.tiers && typeof tierCfg.tiers === 'object' ? tierCfg.tiers : tierCfg)
+      : {};
+
+  const tryKeys = [short, raw, 'elite'];
+  let factor = 1.0;
+  for (const k of tryKeys) {
+    const v = table[k];
+    if (v != null && !Number.isNaN(+v)) {
+      factor = +v;
+      break;
+    }
+  }
+
+  if (factor === 1.0 && !('elite' in table)) {
+    console.warn('tier_pricing_factors missing or unrecognized; defaulting to 1.0');
+  }
+
+  return { tierKey: short, factor };
+}
 
 // POST /api/chase/calculate - Chase cover pricing with decimal support
 router.post('/calculate', (req, res) => {
-  const { metalType: rawMetalType = req.body.metal, skirt, length, width, tier, holes = 1 } = req.body;
+  const {
+    metalType: rawMetalType = req.body.metal,
+    skirt,
+    length,
+    width,
+    tier,
+    holes = 1,
+  } = req.body;
   const metalType = rawMetalType;
 
   console.log('📩 Incoming request to /api/chase/calculate:', req.body);
+
+  // 🔹 Resolve tier via JSON config (prefer server-injected)
+  const { tierKey: chosenTier, factor: multiplier } = resolveTierAndFactor(tier, req.tier);
 
   // Validate metal type
   const metalMatrix = chaseCoverMatrix[metalType];
@@ -72,8 +119,7 @@ router.post('/calculate', (req, res) => {
     return res.status(400).json({ error: 'No valid size category found for input' });
   }
 
-  // 🔹 Tier multiplier
-  const multiplier = tierMultipliers[tier] ?? 1.0;
+  // 🔹 Apply tier factor from JSON
   const baseFinal = elitePrice * multiplier;
 
   // 🔹 Hole pricing
@@ -97,9 +143,9 @@ router.post('/calculate', (req, res) => {
     width,
     sizeCategory,
     base_price: parseFloat(elitePrice.toFixed(2)),
-    tier,
+    tier: chosenTier,
     adjustedFactor: parseFloat(multiplier.toFixed(4)),
-    finalPrice: parseFloat(finalPrice.toFixed(2))
+    finalPrice: parseFloat(finalPrice.toFixed(2)),
   });
 });
 

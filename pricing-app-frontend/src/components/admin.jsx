@@ -1,23 +1,57 @@
 import React, { useEffect, useState } from "react";
-
-const API_BASE = "http://192.168.0.73:3001/api/admin";
+import { ADMIN_BASE, ANNOUNCE_BASE } from "../config/api";
 
 function Admin() {
   const [tab, setTab] = useState("multi");
-  const [multiFactors, setMultiFactors] = useState({});
-  const [shroudData, setShroudData] = useState({});
-  // 🟦 State for Shroud tab
-  const [selectedMetal, setSelectedMetal] = useState("");
-  const [selectedProduct, setSelectedProduct] = useState("");
-  const [selectedSize, setSelectedSize] = useState("");
-  const [currentPrice, setCurrentPrice] = useState(null);
-  const [newPrice, setNewPrice] = useState("");
 
-  // 🟦 State for Multi-Flue tab
-  const [multiMetal, setMultiMetal] = useState("");
-  const [multiProduct, setMultiProduct] = useState("");
-  const [factorVal, setFactorVal] = useState("");
-  // Default adjustments structure
+  // ---------- Auth ----------
+  const [currentUser, setCurrentUser] = useState(
+    localStorage.getItem("adminUser") || ""
+  );
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+
+  const signIn = async (e) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError("");
+    try {
+      const res = await fetch(`${ADMIN_BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: loginUsername,
+          password: loginPassword,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Login failed");
+      const user = data.user || loginUsername;
+      setCurrentUser(user);
+      localStorage.setItem("adminUser", user);
+      setLoginPassword("");
+    } catch (err) {
+      setLoginError(
+        err.message.includes("Failed to fetch")
+          ? "Unable to reach server"
+          : err.message
+      );
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const signOut = () => {
+    localStorage.removeItem("adminUser");
+    setCurrentUser("");
+    setLoginUsername("");
+    setLoginPassword("");
+  };
+
+  // ---------- Multi-Flue ----------
   const defaultAdjustments = {
     screen: { standard: 0, interval: 0, rate: 0 },
     overhang: { standard: 0, interval: 0, rate: 0 },
@@ -25,43 +59,56 @@ function Admin() {
     skirt: { standard: 0, interval: 0, rate: 0 },
     pitch: { below: 0, above: 0 },
   };
+
+  const [multiFactors, setMultiFactors] = useState({});
+  const [multiMetal, setMultiMetal] = useState("");
+  const [multiProduct, setMultiProduct] = useState("");
+  const [factorVal, setFactorVal] = useState("");
   const [adjustments, setAdjustments] = useState(defaultAdjustments);
 
-  // 🟧 State for Announcements tab
+  // ---------- Shrouds ----------
+  const [shroudData, setShroudData] = useState({});
+  const [selectedMetal, setSelectedMetal] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState("");
+  const [selectedSize, setSelectedSize] = useState("");
+  const [currentPrice, setCurrentPrice] = useState(null);
+  const [newPrice, setNewPrice] = useState("");
+
+  // ---------- Announcements ----------
   const [announcements, setAnnouncements] = useState([]);
   const [newAnnouncement, setNewAnnouncement] = useState("");
 
-  // ======== Load Data ========
+  // ---------- Load data when tab changes & user is signed in ----------
   useEffect(() => {
+    if (!currentUser) return;
+
     if (tab === "multi") {
-      fetch(`${API_BASE}/factors`)
-        .then((res) => res.json())
+      fetch(`${ADMIN_BASE}/factors`)
+        .then((r) => r.json())
         .then((data) => setMultiFactors(data || {}))
         .catch(() => setMultiFactors({}));
     } else if (tab === "shrouds") {
-      fetch(`${API_BASE}/shrouds`)
-        .then((res) => res.json())
-        .then((data) => {
-          console.log("Shroud Data:", data);
-          setShroudData(data || {});
-        })
+      fetch(`${ADMIN_BASE}/shrouds`)
+        .then((r) => r.json())
+        .then((data) => setShroudData(data || {}))
         .catch(() => setShroudData({}));
     } else if (tab === "announce") {
-      fetch(`${API_BASE}/announcements`)
-        .then((res) => res.json())
+      fetch(`${ANNOUNCE_BASE}`)
+        .then((r) => r.json())
         .then((data) => setAnnouncements(Array.isArray(data) ? data : []))
         .catch(() => setAnnouncements([]));
     }
-  }, [tab]);
+  }, [tab, currentUser]);
 
-  // Update factor and adjustments when selection changes in Multi tab
+  // ---------- Multi: sync selection -> inputs ----------
   useEffect(() => {
     if (multiMetal && multiProduct) {
       const entry = multiFactors[multiMetal]?.[multiProduct];
       if (entry) {
         setFactorVal(entry.factor ?? "");
-        // Deep clone adjustments to avoid mutating state directly
-        const clonedAdj = JSON.parse(JSON.stringify(entry.adjustments || defaultAdjustments));
+        const clonedAdj = JSON.parse(
+          JSON.stringify(entry.adjustments || defaultAdjustments)
+        );
         setAdjustments(clonedAdj);
       } else {
         setFactorVal("");
@@ -73,38 +120,39 @@ function Admin() {
     }
   }, [multiMetal, multiProduct, multiFactors]);
 
-  // ======== Handle Dropdowns ========
+  // ---------- Shroud derived lists ----------
   const metals = Object.keys(shroudData || {});
-
   const productsForMetal = selectedMetal
     ? Object.keys(shroudData[selectedMetal] || {})
     : [];
-
   const sizesForProduct =
     selectedMetal && selectedProduct
       ? Object.keys(shroudData[selectedMetal]?.[selectedProduct] || {})
       : [];
 
-  // Update current price when selection changes
+  // Shroud: show current price & seed new price
   useEffect(() => {
     if (selectedMetal && selectedProduct && selectedSize) {
-      const price = shroudData[selectedMetal]?.[selectedProduct]?.[selectedSize];
+      const price =
+        shroudData[selectedMetal]?.[selectedProduct]?.[selectedSize];
       setCurrentPrice(price ?? null);
       setNewPrice(price ?? "");
     }
   }, [selectedMetal, selectedProduct, selectedSize, shroudData]);
 
-  // ======== Submit Shroud Price Update ========
+  // ---------- Actions ----------
   const handleShroudUpdate = async () => {
     if (!selectedMetal || !selectedProduct || !selectedSize || !newPrice) {
       alert("Please select all fields and enter a price.");
       return;
     }
-
     try {
-      const res = await fetch(`${API_BASE}/shrouds`, {
+      const res = await fetch(`${ADMIN_BASE}/shrouds`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-User": currentUser, // audit header
+        },
         body: JSON.stringify({
           metal: selectedMetal,
           product: selectedProduct,
@@ -112,111 +160,111 @@ function Admin() {
           newPrice: parseFloat(newPrice),
         }),
       });
-
-      const data = await res.json();
-      if (data.success) {
-        alert("Price updated!");
-        // Refresh shroud data
-        const updated = await fetch(`${API_BASE}/shrouds`).then((r) => r.json());
-        setShroudData(updated);
-      } else {
-        alert("Failed to update price.");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.success === false) {
+        throw new Error(data.message || "Failed to update price.");
       }
+      alert("Price updated!");
+      const updated = await fetch(`${ADMIN_BASE}/shrouds`).then((r) => r.json());
+      setShroudData(updated);
     } catch (err) {
       console.error("Error updating shroud price:", err);
-      alert("Error updating price.");
+      alert(err.message || "Error updating price.");
     }
   };
 
-// ======== Submit Multi Factor Update ========
-const handleMultiUpdate = async () => {
-  if (!multiMetal || !multiProduct) {
-    alert("Please select metal and product.");
-    return;
-  }
-  try {
-    const res = await fetch(`${API_BASE}/factors`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        metal: multiMetal,
-        product: multiProduct,
-        factor: parseFloat(factorVal),
-        adjustments,
-      }),
-    });
-    const data = await res.json();
-    if (data.success) {
+  const handleMultiUpdate = async () => {
+    if (!multiMetal || !multiProduct) {
+      alert("Please select metal and product.");
+      return;
+    }
+    try {
+      const res = await fetch(`${ADMIN_BASE}/factors`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-User": currentUser, // audit header
+        },
+        body: JSON.stringify({
+          metal: multiMetal,
+          product: multiProduct,
+          factor: parseFloat(factorVal),
+          adjustments,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!(data.success || res.ok)) throw new Error("Failed to update factor.");
       alert("Factor updated!");
-      const updated = await fetch(`${API_BASE}/factors`).then((r) => r.json());
+      const updated = await fetch(`${ADMIN_BASE}/factors`).then((r) => r.json());
       setMultiFactors(updated);
-    } else {
-      alert("Failed to update factor.");
+    } catch (err) {
+      console.error("Error updating factor:", err);
+      alert(err.message || "Error updating factor.");
     }
-  } catch (err) {
-    console.error("Error updating factor:", err);
-    alert("Error updating factor.");
-  }
-};
+  };
 
-// ======== Submit Announcement ========
-const submitAnnouncement = async () => {
-  if (!announcementText.trim()) {
-    alert("Please enter a message first.");
-    return;
-  }
-
-  try {
-    const response = await fetch(`${API_BASE}/api/announcements`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: announcementText }),
-    });
-
-    if (response.ok) {
-      const liveRes = await fetch(`${API_BASE}/api/announcements/live`);
-      const liveData = await liveRes.json();
-      console.log("🔔 Live Announcement Set:", liveData);
-
-      alert("✅ Live announcement updated!");
-      setAnnouncementText("");
-    } else {
-      const data = await response.json();
-      alert(`❌ Failed to save: ${data.error || response.statusText}`);
+  const handleAddAnnouncement = async () => {
+    if (!newAnnouncement.trim()) return;
+    try {
+      const res = await fetch(`${ANNOUNCE_BASE}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-User": currentUser, // audit header
+        },
+        body: JSON.stringify({ text: newAnnouncement }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) throw new Error("Failed to add announcement");
+      const added = data.announcement;
+      setAnnouncements((prev) => [...prev, added]);
+      setNewAnnouncement("");
+    } catch (err) {
+      console.error("Error adding announcement:", err);
+      alert(err.message || "Error adding announcement.");
     }
-  } catch (err) {
-    console.error("🚨 Error saving announcement:", err);
-    alert("Error saving announcement. Check console.");
-  }
-};
+  };
 
-// ======== Delete Announcement ========
-const handleDeleteAnnouncement = async (id) => {
-  if (!window.confirm("Delete this announcement?")) return;
-  try {
-    const res = await fetch(`${API_BASE}/announcements/${id}`, {
-      method: "DELETE",
-    });
-    const data = await res.json();
-    if (data.success) {
-      alert("Announcement deleted!");
+  const handleDeleteAnnouncement = async (id) => {
+    if (!window.confirm("Delete this announcement?")) return;
+    try {
+      const res = await fetch(`${ANNOUNCE_BASE}/${id}`, {
+        method: "DELETE",
+        headers: { "X-Admin-User": currentUser }, // audit header
+      });
+      if (!res.ok) throw new Error("Failed to delete announcement");
       setAnnouncements((prev) => prev.filter((a) => a.id !== id));
-    } else {
-      alert("Failed to delete announcement.");
+    } catch (err) {
+      console.error("Error deleting announcement:", err);
+      alert(err.message || "Error deleting announcement.");
     }
-  } catch (err) {
-    console.error("Error deleting announcement:", err);
-    alert("Error deleting announcement.");
-  }
-};
+  };
+
+  // ---------- UI ----------
   return (
-    <div className="min-h-screen w-full bg-gray-100 flex flex-col items-center p-6">
+    <div className="min-h-screen w-full bg-gray-100 flex flex-col items-center p-6 relative">
       <a
         href="/"
         className="mb-4 px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600 text-sm shadow-md"
       >
         ⬅ Back to Main
       </a>
+
+      <div className="absolute top-6 right-6 text-sm">
+        {currentUser ? (
+          <div className="flex items-center space-x-2">
+            <span className="text-gray-700">
+              Signed in as <b>{currentUser}</b>
+            </span>
+            <button
+              onClick={signOut}
+              className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded"
+            >
+              Sign out
+            </button>
+          </div>
+        ) : null}
+      </div>
 
       <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
 
@@ -261,7 +309,6 @@ const handleDeleteAnnouncement = async (id) => {
         <div className="w-full max-w-xl bg-white shadow rounded p-6">
           <h2 className="text-xl font-semibold mb-4">Multi-Flue Factor Editor</h2>
 
-          {/* Metal Dropdown for Multi-Flue */}
           <label className="block mb-2">Metal Type</label>
           <select
             value={multiMetal}
@@ -279,7 +326,6 @@ const handleDeleteAnnouncement = async (id) => {
             ))}
           </select>
 
-          {/* Product Dropdown for Multi-Flue */}
           <label className="block mb-2">Product</label>
           <select
             value={multiProduct}
@@ -296,10 +342,8 @@ const handleDeleteAnnouncement = async (id) => {
               ))}
           </select>
 
-          {/* Factor and Adjustments Inputs */}
           {multiMetal && multiProduct && (
             <>
-              {/* Factor Input */}
               <label className="block mb-2">Factor</label>
               <input
                 type="number"
@@ -309,9 +353,9 @@ const handleDeleteAnnouncement = async (id) => {
                 className="w-full p-2 border rounded mb-4"
               />
 
-              {/* Adjustments Inputs */}
               <h3 className="text-lg font-semibold mb-2">Adjustments</h3>
-              {/* Screen adjustments */}
+
+              {/* Screen */}
               <div className="mb-4">
                 <p className="font-semibold mb-2">Screen</p>
                 <label className="block text-sm mb-1">Standard</label>
@@ -364,7 +408,7 @@ const handleDeleteAnnouncement = async (id) => {
                 />
               </div>
 
-              {/* Overhang adjustments */}
+              {/* Overhang */}
               <div className="mb-4">
                 <p className="font-semibold mb-2">Overhang</p>
                 <label className="block text-sm mb-1">Standard</label>
@@ -417,7 +461,7 @@ const handleDeleteAnnouncement = async (id) => {
                 />
               </div>
 
-              {/* Inset adjustments */}
+              {/* Inset */}
               <div className="mb-4">
                 <p className="font-semibold mb-2">Inset</p>
                 <label className="block text-sm mb-1">Standard</label>
@@ -470,7 +514,7 @@ const handleDeleteAnnouncement = async (id) => {
                 />
               </div>
 
-              {/* Skirt adjustments */}
+              {/* Skirt */}
               <div className="mb-4">
                 <p className="font-semibold mb-2">Skirt</p>
                 <label className="block text-sm mb-1">Standard</label>
@@ -523,7 +567,7 @@ const handleDeleteAnnouncement = async (id) => {
                 />
               </div>
 
-              {/* Pitch adjustments */}
+              {/* Pitch */}
               <div className="mb-4">
                 <p className="font-semibold mb-2">Pitch</p>
                 <label className="block text-sm mb-1">Below</label>
@@ -576,7 +620,6 @@ const handleDeleteAnnouncement = async (id) => {
         <div className="w-full max-w-xl bg-white shadow rounded p-6">
           <h2 className="text-xl font-semibold mb-4">Shroud Price Editor</h2>
 
-          {/* Metal Dropdown */}
           <label className="block mb-2">Metal Type</label>
           <select
             value={selectedMetal}
@@ -595,7 +638,6 @@ const handleDeleteAnnouncement = async (id) => {
             ))}
           </select>
 
-          {/* Product Dropdown */}
           <label className="block mb-2">Product</label>
           <select
             value={selectedProduct}
@@ -614,7 +656,6 @@ const handleDeleteAnnouncement = async (id) => {
             ))}
           </select>
 
-          {/* Size Dropdown */}
           <label className="block mb-2">Size</label>
           <select
             value={selectedSize}
@@ -630,7 +671,6 @@ const handleDeleteAnnouncement = async (id) => {
             ))}
           </select>
 
-          {/* Current and New Price */}
           {selectedSize && (
             <div className="mb-4">
               <p className="mb-2">
@@ -659,6 +699,7 @@ const handleDeleteAnnouncement = async (id) => {
         </div>
       )}
 
+      {/* Chase placeholder */}
       {tab === "chase" && (
         <div className="w-full max-w-xl bg-white shadow rounded p-6 text-center">
           <h2 className="text-xl font-semibold mb-4">Chase Cover Editor</h2>
@@ -666,11 +707,10 @@ const handleDeleteAnnouncement = async (id) => {
         </div>
       )}
 
-      {/* Announcements Tab */}
+      {/* Announcements */}
       {tab === "announce" && (
         <div className="w-full max-w-xl bg-white shadow rounded p-6">
           <h2 className="text-xl font-semibold mb-4">Manage Announcements</h2>
-          {/* List existing announcements */}
           <ul className="mb-4">
             {announcements.length === 0 && (
               <li className="text-gray-500">No announcements found.</li>
@@ -690,7 +730,6 @@ const handleDeleteAnnouncement = async (id) => {
               </li>
             ))}
           </ul>
-          {/* Add new announcement */}
           <label className="block mb-2">New Announcement</label>
           <textarea
             value={newAnnouncement}
@@ -705,6 +744,59 @@ const handleDeleteAnnouncement = async (id) => {
           >
             Add Announcement
           </button>
+        </div>
+      )}
+
+      {/* ---------- Login Modal ---------- */}
+      {!currentUser && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+          <form
+            onSubmit={signIn}
+            className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md"
+          >
+            <h2 className="text-xl font-semibold mb-4">Admin Sign In</h2>
+
+            <input
+              type="text"
+              value={loginUsername}
+              onChange={(e) => setLoginUsername(e.target.value)}
+              placeholder="Username"
+              className="w-full p-2 border rounded mb-3"
+              autoFocus
+            />
+
+            <div className="relative mb-3">
+              <input
+                type={showPw ? "text" : "password"}
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                placeholder="Password"
+                className="w-full p-2 border rounded pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw((s) => !s)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500"
+                title={showPw ? "Hide" : "Show"}
+              >
+                {showPw ? "🙈" : "👁️"}
+              </button>
+            </div>
+
+            {loginError && (
+              <div className="text-red-600 text-sm mb-3">{loginError}</div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className={`w-full ${
+                isLoggingIn ? "bg-blue-400" : "bg-blue-600 hover:bg-blue-700"
+              } text-white p-2 rounded`}
+            >
+              {isLoggingIn ? "Signing in..." : "Sign in"}
+            </button>
+          </form>
         </div>
       )}
     </div>
