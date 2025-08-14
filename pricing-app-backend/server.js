@@ -1,4 +1,4 @@
-// server.js — minimal changes: ensure body parsers, and mount announcements at ALL paths
+// server.js — minimal changes: ensure body parsers, and mount announcements & admin routes
 
 const express = require('express');
 const cors = require('cors');
@@ -8,11 +8,12 @@ const app = express();
 
 // -------- Core middleware (keep these ABOVE routes) --------
 app.use(express.json());
-// Accept urlencoded body too (some frontends default to this)
 app.use(express.urlencoded({ extended: true }));
-
 app.use(morgan('dev'));
 app.use(cors()); // dev: allow all
+app.use('/api/admin/tiers', require('./routes/adminTiers'));
+app.use('/api/admin', require('./routes/adminAuth'));
+
 
 // -------- Health check --------
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
@@ -129,13 +130,11 @@ router.post('/', (req, res) => {
 // Mount calculator
 app.use('/api/calculate', router);
 
-// ======== Admin + Announcements mounts ========
-try {
-  app.use('/api/admin', require('./routes/admin'));
-  console.log('✅ Mounted /api/admin -> routes/admin.js');
-} catch { console.warn('ℹ️ routes/admin.js not found'); }
+// ======== Admin (read-only data) ========
+const adminRoutes = require('./routes/adminRoutes');
+app.use('/api/admin', adminRoutes);
 
-// Use the SAME robust announcements router everywhere (singular/plural, admin/non-admin)
+// ======== Announcements mounts (keep your existing router if present) ========
 try {
   const announcementsRouter = require('./routes/announcements');
 
@@ -151,10 +150,6 @@ try {
 } catch (e) {
   console.warn('ℹ️ routes/announcements.js not found');
 }
-
-// IMPORTANT: Do NOT also mount the older announcement files; they conflict:
-//  - routes/announcement.js
-//  - routes/announcementroutes.js
 
 // ======== Startup ========
 const PORT = process.env.PORT || 3001;

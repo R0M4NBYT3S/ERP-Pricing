@@ -1,177 +1,113 @@
-// routes/adminroutes.js
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
+// routes/adminRoutes.js
+// Read-only endpoints used by the Admin UI to populate dropdowns.
 
+const express = require('express');
 const router = express.Router();
 
-/* ──────────────────────────────────────────────
-   Helpers: read/write JSON, ensure folders exist
-────────────────────────────────────────────── */
-function readJSON(p, fallback) {
-  try {
-    if (!fs.existsSync(p)) return fallback;
-    return JSON.parse(fs.readFileSync(p, 'utf8') || 'null') ?? fallback;
-  } catch (e) {
-    console.error(`Error reading ${p}:`, e);
-    return fallback;
+// ---- Health for admin scope (optional but handy) ----
+router.get('/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
+// Multi-flue factors source (as used by your calculators)
+let multiFactors = {};
+try {
+  // If your file is an array of rows, we’ll reshape to { metal: {product:{factor,adjustments}} }
+  const raw = require('../config/multiFactors.json');
+
+  if (Array.isArray(raw)) {
+    const shaped = {};
+    for (const row of raw) {
+      const metal = String(row.metal || '').toLowerCase();
+      const product = String(row.product || '').toLowerCase();
+      if (!metal || !product) continue;
+      shaped[metal] ||= {};
+      shaped[metal][product] = {
+        factor: Number(row.factor || 0),
+        adjustments: row.adjustments || {
+          screen:  { standard: 0, interval: 0, rate: 0 },
+          overhang:{ standard: 0, interval: 0, rate: 0 },
+          inset:   { standard: 0, interval: 0, rate: 0 },
+          skirt:   { standard: 0, interval: 0, rate: 0 },
+          pitch:   { below: 0, above: 0 },
+        },
+      };
+    }
+    multiFactors = shaped;
+  } else if (raw && typeof raw === 'object') {
+    // Already keyed object
+    multiFactors = raw;
   }
-}
-function writeJSON(p, data) {
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(data, null, 2), 'utf8');
-}
-const LOGS_DIR = path.join(__dirname, '../logs');
-fs.mkdirSync(LOGS_DIR, { recursive: true });
-const AUDIT_LOG = path.join(LOGS_DIR, 'admin-audit.json'); // array of entries
-
-function logChange(entry) {
-  const existing = readJSON(AUDIT_LOG, []);
-  existing.push({ ts: new Date().toISOString(), ...entry });
-  writeJSON(AUDIT_LOG, existing);
+} catch (e) {
+  console.warn('⚠️ adminRoutes: multiFactors.json not found or invalid:', e.message);
+  multiFactors = {};
 }
 
-/* ──────────────────────────────────────────────
-   Simple multi-user login
-   File: config/adminUsers.json  (see below)
-────────────────────────────────────────────── */
-const usersFile = path.join(__dirname, '../config/adminUsers.json');
-
-router.post('/login', (req, res) => {
-  const { username = '', password = '' } = req.body || {};
-  const cfg = readJSON(usersFile, { users: [] });
-  const ok = cfg.users.some(
-    u => u.username.toLowerCase() === String(username).toLowerCase() && u.password === password
-  );
-  if (!ok) return res.status(401).json({ success: false, message: 'Invalid credentials' });
-
-  logChange({ action: 'login', user: username });
-  return res.json({ success: true, user: username });
-});
-
-router.get('/logs', (req, res) => {
-  res.json(readJSON(AUDIT_LOG, []));
-});
-
-/* ──────────────────────────────────────────────
-   Announcements (file-backed)
-────────────────────────────────────────────── */
-const announcementsFile = path.join(__dirname, '../announcement.json');
-
-function loadAnnouncements() {
-  return readJSON(announcementsFile, []);
-}
-function saveAnnouncements(list) {
-  writeJSON(announcementsFile, list);
+// Shroud pricing source (metals config consumed by admin UI)
+let shroudMetals = {};
+try {
+  const { metals } = require('../config/shroudUnified');
+  shroudMetals = metals || {};
+} catch (e) {
+  console.warn('⚠️ adminRoutes: shroudUnified not found or invalid:', e.message);
+  shroudMetals = {};
 }
 
-// GET all announcements
-router.get('/announcements', (req, res) => {
-  res.json(loadAnnouncements());
+// ---- ROUTES ----
+
+// GET /api/admin/factors  → used by Admin Multi-Flue tab
+router.get('/factors', (_req, res) => {
+  res.json(multiFactors || {});
 });
 
-// POST add announcement
-router.post('/announcements', (req, res) => {
-  const { text } = req.body || {};
-  if (!text || !text.trim()) return res.status(400).json({ success: false, message: 'Text is required' });
-
-  const announcements = loadAnnouncements();
-  const newAnnouncement = { id: Date.now(), text: text.trim(), timestamp: new Date().toISOString() };
-  announcements.push(newAnnouncement);
-  saveAnnouncements(announcements);
-
-  logChange({ action: 'announcement:add', user: req.headers['x-admin-user'] || 'unknown', text: newAnnouncement.text });
-  res.json({ success: true, announcement: newAnnouncement });
+// GET /api/admin/shrouds  → used by Admin Shrouds tab
+router.get('/shrouds', (_req, res) => {
+  res.json(shroudMetals || {});
 });
 
-// DELETE announcement
-router.delete('/announcements/:id', (req, res) => {
-  const id = Number(req.params.id);
-  const before = loadAnnouncements();
-  const after = before.filter(a => a.id !== id);
-  if (after.length === before.length) return res.status(404).json({ success: false, message: 'Not found' });
+// --- ADD: write factors endpoint for Admin page ---
+const fs = require('fs');
+const path = require('path');
+const FACTOR_PATH = path.resolve(__dirname, '../config/multiFactors.json');
 
-  saveAnnouncements(after);
-  logChange({ action: 'announcement:delete', user: req.headers['x-admin-user'] || 'unknown', id });
-  res.json({ success: true });
-});
-
-/* ──────────────────────────────────────────────
-   Multi-Flue Factors
-   (kept compatible with your current file format)
-────────────────────────────────────────────── */
-const factorsPath = path.join(__dirname, '../config/multiFactors.json');
-
-router.get('/factors', (req, res) => {
-  try {
-    const data = fs.readFileSync(factorsPath, 'utf-8');
-    res.json(JSON.parse(data));
-  } catch (err) {
-    console.error('Error reading factors file:', err);
-    res.status(500).json({ error: 'Failed to read factors' });
-  }
-});
+function readFactorsRaw() {
+  try { return JSON.parse(fs.readFileSync(FACTOR_PATH, 'utf8')); }
+  catch { return []; }
+}
+function writeFactorsRaw(rows) {
+  fs.writeFileSync(FACTOR_PATH, JSON.stringify(rows, null, 2));
+  // bust require cache for any code that still require()s the file
+  try { delete require.cache[require.resolve('../config/multiFactors.json')]; } catch {}
+}
 
 router.post('/factors', (req, res) => {
-  try {
-    const updated = req.body;
-    fs.writeFileSync(factorsPath, JSON.stringify(updated, null, 2));
-    logChange({
-      action: 'factors:update',
-      user: req.headers['x-admin-user'] || 'unknown',
-      summary: 'multiFactors.json overwritten'
-    });
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Error writing factors file:', err);
-    res.status(500).json({ error: 'Failed to save factors' });
+  const { metal, product, factor, adjustments } = req.body || {};
+  const m = String(metal || '').toLowerCase();
+  const p = String(product || '').toLowerCase();
+  const f = Number(factor);
+
+  if (!m || !p || !Number.isFinite(f)) {
+    return res.status(400).send('metal, product, factor required');
   }
+
+  const rows = readFactorsRaw();
+
+  // We key off the ELITE row (that’s what pricing uses as the base)
+  const idx = rows.findIndex(r =>
+    String(r.metal || '').toLowerCase()   === m &&
+    String(r.product || '').toLowerCase() === p &&
+    String(r.tier || 'elite').toLowerCase() === 'elite'
+  );
+
+  if (idx === -1) {
+    rows.push({ metal: m, product: p, tier: 'elite', factor: f, adjustments: adjustments || undefined });
+  } else {
+    rows[idx] = { ...rows[idx], factor: f, adjustments: adjustments ?? rows[idx].adjustments };
+  }
+
+  writeFactorsRaw(rows);
+  return res.json({ success: true });
 });
 
-/* ──────────────────────────────────────────────
-   Shroud Pricing
-────────────────────────────────────────────── */
-const shroudPricesPath = path.join(__dirname, '../config/shroudPrices.js');
-
-router.get('/shrouds', (req, res) => {
-  try {
-    delete require.cache[require.resolve(shroudPricesPath)];
-    const raw = require(shroudPricesPath);
-    const normalized = raw.pricingRules || raw;
-    res.json(normalized);
-  } catch (err) {
-    console.error('Error reading shroudPrices.js:', err);
-    res.status(500).json({ error: 'Failed to read shrouds' });
-  }
-});
-
-router.post('/shrouds', (req, res) => {
-  const { metal, product, size, newPrice } = req.body || {};
-  if (!metal || !product || !size || isNaN(newPrice)) return res.status(400).json({ error: 'Invalid data' });
-
-  try {
-    delete require.cache[require.resolve(shroudPricesPath)];
-    const raw = require(shroudPricesPath);
-    const data = raw.pricingRules || raw;
-
-    if (!data[metal]) data[metal] = {};
-    if (!data[metal][product]) data[metal][product] = {};
-    data[metal][product][size] = Number(newPrice);
-
-    const content = 'module.exports = ' + JSON.stringify(data, null, 2) + ';\n';
-    fs.writeFileSync(shroudPricesPath, content, 'utf-8');
-
-    logChange({
-      action: 'shroud:update',
-      user: req.headers['x-admin-user'] || 'unknown',
-      metal, product, size, newPrice: Number(newPrice)
-    });
-
-    res.json({ success: true, updated: { metal, product, size, newPrice: Number(newPrice) } });
-  } catch (err) {
-    console.error('Error updating shroudPrices.js:', err);
-    res.status(500).json({ error: 'Failed to save shroud price' });
-  }
-});
 
 module.exports = router;

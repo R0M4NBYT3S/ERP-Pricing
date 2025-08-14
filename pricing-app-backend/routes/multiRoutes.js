@@ -46,6 +46,39 @@ function resolveTierAndFactor(reqTier, injectedTier) {
   return { tierKey: short, factor };
 }
 
+// NEW: read-only config for Admin UI dropdowns
+router.get('/factors', (_req, res) => {
+  try {
+    const raw = factorData;
+    // If array-shaped, present as { metal: { product: { factor, adjustments } } }
+    if (Array.isArray(raw)) {
+      const shaped = {};
+      for (const row of raw) {
+        const metal = String(row.metal || '').toLowerCase();
+        const product = String(row.product || '').toLowerCase();
+        if (!metal || !product) continue;
+        shaped[metal] ||= {};
+        shaped[metal][product] = {
+          factor: Number(row.factor || 0),
+          adjustments: row.adjustments || {
+            screen: { standard: 0, interval: 0, rate: 0 },
+            overhang: { standard: 0, interval: 0, rate: 0 },
+            inset: { standard: 0, interval: 0, rate: 0 },
+            skirt: { standard: 0, interval: 0, rate: 0 },
+            pitch: { below: 0, above: 0 }
+          }
+        };
+      }
+      return res.json(shaped);
+    }
+    // already-keyed object
+    return res.json(raw || {});
+  } catch (e) {
+    console.error('GET /factors error:', e);
+    return res.json({});
+  }
+});
+
 router.post('/calculate', (req, res) => {
   try {
     let { product, metalType, metal, tier } = req.body;

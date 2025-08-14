@@ -1,3 +1,4 @@
+// routes/calculate.js
 const express = require('express');
 const router = express.Router();
 
@@ -5,9 +6,28 @@ const { calculateChaseCover } = require('../pricing/calculateChaseCover');
 const { calculateMultiPrice } = require('../pricing/calculateMulti');
 const { calculateShroud } = require('../pricing/calculateShroud');
 const { normalizeMetalType } = require('../utils/normalizeMetal');
-const factorData = require('../config/multiFactors.json');
+const factorData = require('../config/multiFactors.json'); // kept for minimal diff
 
-// ---- Load tier factors from master file ----
+// --- NEW: always read fresh factors so Admin edits apply without restart ---
+function loadFactorData() {
+  try { delete require.cache[require.resolve('../config/multiFactors.json')]; } catch {}
+  try { return require('../config/multiFactors.json'); } catch { return []; }
+}
+
+// ---- compact logging control (kept) ----
+const COMPACT_LOGS = true;
+function runMuted(fn) {
+  if (!COMPACT_LOGS) return fn();
+  const orig = console.log;
+  try {
+    console.log = () => {};
+    return fn();
+  } finally {
+    console.log = orig;
+  }
+}
+
+// ---- Load tier factors from master file (kept) ----
 let tierCfg = {};
 try {
   // Accepts either:
@@ -88,8 +108,23 @@ router.post('/', (req, res) => {
     // Chase Cover branch
     if (lowerProduct.includes('chase_cover')) {
       console.log('➡️ Routing to calculateChaseCover');
-      result = calculateChaseCover(input);
-      console.log('💰 Calculated Chase Cover Price:', result);
+
+      result = runMuted(() => calculateChaseCover(input));
+
+      // compact one-line summary
+      console.log(
+        '🧮 Chase',
+        JSON.stringify({
+          L: input.lengthVal,
+          W: input.widthVal,
+          S: input.skirtVal,
+          holes: input.holes,
+          U: input.unsquare,
+          metalType: input.metalType,
+          tier: resolveTierAndFactor(tier).tierKey,
+          final: result && (result.finalPrice ?? result.final_price)
+        })
+      );
     }
 
     // Multi-Flue branch
@@ -100,11 +135,11 @@ router.post('/', (req, res) => {
     ) {
       console.log('➡️ Routing to calculateMultiPrice');
 
-      // Always look up the ELITE factor row from multiFactors, then apply the tier factor from master tier file
-      const factorRow = factorData.find(f =>
-        f.metal.toLowerCase() === metalType &&
-        f.product.toLowerCase() === lowerProduct &&
-        f.tier.toLowerCase() === 'elite'
+      // Always look up the ELITE factor row freshly from multiFactors, then apply the tier factor
+      const factorRow = (loadFactorData() || []).find(f =>
+        String(f.metal).toLowerCase() === metalType &&
+        String(f.product).toLowerCase() === lowerProduct &&
+        String(f.tier || 'elite').toLowerCase() === 'elite'
       );
 
       if (!factorRow) {
@@ -118,16 +153,43 @@ router.post('/', (req, res) => {
       // Pull multiplier from master tier file
       const { tierKey, factor: tierMul } = resolveTierAndFactor(tier);
 
-      // Perform calculation
-      result = calculateMultiPrice(input, adjustments, baseFactor, tierMul, tierKey);
-      console.log('💰 Calculated Multi-Flue Price:', result);
+      // Perform calculation (muted)
+      result = runMuted(() =>
+        calculateMultiPrice(input, adjustments, baseFactor, tierMul, tierKey)
+      );
+
+      // compact one-line summary
+      console.log(
+        '🧮 Multi',
+        JSON.stringify({
+          L: input.lengthVal, W: input.widthVal,
+          screen: input.screenVal, overhang: input.overhangVal,
+          inset: input.insetVal, skirt: input.skirtVal, pitch: input.pitchVal,
+          metalType: input.metalType, tier: tierKey,
+          base: baseFactor,
+          adj: result && result.adjustedFactor,
+          tiered: result && result.tieredFactor,
+          final: result && result.finalPrice
+        })
+      );
     }
 
     // Shroud branch
     else if (shroudProducts.some(name => lowerProduct.includes(name))) {
       console.log('➡️ Routing to calculateShroud');
-      result = calculateShroud(input);
-      console.log('💰 Calculated Shroud Price:', result);
+
+      result = runMuted(() => calculateShroud(input));
+
+      // compact one-line summary
+      console.log(
+        '🧮 Shroud',
+        JSON.stringify({
+          product: input.product,
+          metalType: input.metalType,
+          tier: resolveTierAndFactor(tier).tierKey,
+          final: result && (result.finalPrice ?? result.final_price)
+        })
+      );
     }
 
     // Unknown product

@@ -43,6 +43,16 @@ function pickMetalKey(metalKey, metalTypeKey) {
   return null;
 }
 
+// NEW: read-only config for Admin UI dropdowns
+router.get('/config', (_req, res) => {
+  try {
+    return res.json(metals || {});
+  } catch (e) {
+    console.error('GET /config error:', e);
+    return res.json({});
+  }
+});
+
 // POST /api/.../shrouds/calculate
 router.post('/calculate', (req, res) => {
   const { metal, metalType, model, length, width } = req.body || {};

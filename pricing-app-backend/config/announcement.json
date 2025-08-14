@@ -18,5 +18,23 @@
     "text": "hello from admin",
     "by": "testuser",
     "ts": 1755016940609
+  },
+  {
+    "id": 1755031519822,
+    "text": "Hello! this is new",
+    "by": "admin",
+    "ts": 1755031519822
+  },
+  {
+    "id": 1755032311676,
+    "text": "APP IN DEVELOPMENT!",
+    "by": "admin",
+    "ts": 1755032311676
+  },
+  {
+    "id": 1755094399009,
+    "text": "Build Alpha 1",
+    "by": "John",
+    "ts": 1755094399009
   }
 ]

@@ -1,4 +1,3 @@
-// calculateMulti.js
 // Multi-Flue Pricing Engine with full logging and flat pitch rules
 
 function calculateMultiPrice(payload, adjustments = {}, baseFactor = 0, tierMultiplier = 1, tier = 'elite') {
@@ -14,12 +13,13 @@ function calculateMultiPrice(payload, adjustments = {}, baseFactor = 0, tierMult
 
   // Ensure adjustments is always an object
   const adj = adjustments || {};
+  const isCorbel = /corbel/i.test(String(payload?.product || ''));
 
   let adjustedFactor = baseFactor;
   const adjustmentLog = [];
 
-  // ✅ Skirt Adjustment
-  if (adj.skirt) {
+  // ✅ Skirt Adjustment (SKIP for corbel SKUs)
+  if (!isCorbel && adj.skirt) {
     const diff = skirtVal - adj.skirt.standard;
     if (diff !== 0) {
       const steps = Math.floor(Math.abs(diff) / adj.skirt.interval);
@@ -62,6 +62,18 @@ function calculateMultiPrice(payload, adjustments = {}, baseFactor = 0, tierMult
     }
   }
 
+  // ✅ Corbel rule (corbel SKUs only): corbel = inset + overhang + skirt; if > 9, add adjustments.corbel (default 0.15)
+  if (isCorbel) {
+    const corbelSum = (insetVal || 0) + (overhangVal || 0) + (skirtVal || 0);
+    const corbelAdd = Number.isFinite(adj.corbel) ? Number(adj.corbel) : 0.15;
+    if (corbelSum > 9) {
+      adjustedFactor += corbelAdd;
+      adjustmentLog.push(`corbel(>9): +${corbelAdd.toFixed(2)} [sum=${corbelSum}]`);
+    } else {
+      adjustmentLog.push(`corbel(<=9): +0 [sum=${corbelSum}]`);
+    }
+  }
+
   // ✅ Pitch Adjustment (Flat Rules)
   if (adj.pitch) {
     if (pitchVal >= 1 && pitchVal <= 6) {
@@ -96,7 +108,7 @@ function calculateMultiPrice(payload, adjustments = {}, baseFactor = 0, tierMult
     tierMultiplier,
     tieredFactor,
     tier,
-    finalPrice: parseFloat(price.toFixed(2)),  // ⬅️ Always two decimals
+    finalPrice: parseFloat(price.toFixed(2)),
   };
 }
 
