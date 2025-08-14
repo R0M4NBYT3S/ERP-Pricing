@@ -142,10 +142,14 @@ function DynamicForm() {
   const multiFlueProducts = ['ftomt', 'hipcor', 'hrtomt', 'hromt', 'htsmt', 'homt', 'hromss'];
 
   const isChase = lowerProduct.includes('chase');
-const isMulti =
-  /(flat[_\s-]?top|hip|ridge)/.test(backendKey) ||  // use backendKey here
-  multiFlueProducts.includes(backendKey) ||
-  multiFlueProducts.includes(lowerProduct);
+  const isMulti =
+    /(flat[_\s-]?top|hip|ridge)/.test(backendKey) ||  // use backendKey here
+    multiFlueProducts.includes(backendKey) ||
+    multiFlueProducts.includes(lowerProduct);
+
+  // NEW: detect hip / hip-and-ridge for pitch handling
+  const isHipProduct = /hip/.test(backendKey);
+
   const shroudKeys = [
     'dynasty', 'majesty', 'monaco', 'royale', 'durham',
     'monarch', 'regal', 'princess', 'prince', 'temptress',
@@ -259,6 +263,11 @@ const isMulti =
 
     const holesCount = Math.max(0, parseInt(formData.holes || 0, 10) || 0);
 
+    // 🔒 Force neutral pitch (12) when NOT hip; otherwise pass user-entered pitch
+    if (!isHipProduct) {
+      parsed.pitch = 12;
+    }
+
     // build payload
     const payload = {
       tier: mapTierToBackend(tier),
@@ -269,7 +278,7 @@ const isMulti =
       holes: holesCount,
       unsquare: !!formData.unsquare,
 
-      // send rounded/skirt-quantized fields
+      // send rounded/skirt-quantized fields (with neutralized pitch if needed)
       ...parsed,
 
       // overwrite length/width with effective values
@@ -545,11 +554,14 @@ const isMulti =
               </>
             )}
 
-            {/* Render remaining product fields (excluding ones we already handled) */}
+            {/* Render remaining product fields (excluding ones we already handled).
+                Also exclude 'pitch' unless this is a hip product. */}
             {(productConfig.products[product]?.fields || [])
               .filter((f) => {
                 const k = f.toLowerCase();
-                return !['length','width','skirt','holes','holecount'].includes(k);
+                if (['length','width','skirt','holes','holecount'].includes(k)) return false;
+                if (k === 'pitch' && !isHipProduct) return false; // HIDE pitch when not hip
+                return true;
               })
               .map((field) => {
                 const { type, required } = getFieldMeta(field);
@@ -575,7 +587,13 @@ const isMulti =
           // ===== OTHER PRODUCTS (not chase/multi/shroud): generic renderer =====
           <>
             {(productConfig.products[product]?.fields || [])
-              .filter((field) => field && !['holes', 'holecount'].includes(field.toLowerCase()))
+              .filter((field) => {
+                const k = field && field.toLowerCase();
+                if (!k) return false;
+                if (['holes','holecount'].includes(k)) return false;
+                if (k === 'pitch' && !isHipProduct) return false; // HIDE pitch when not hip
+                return true;
+              })
               .map((field) => {
                 const { type, required } = getFieldMeta(field);
                 const lower = field.toLowerCase();

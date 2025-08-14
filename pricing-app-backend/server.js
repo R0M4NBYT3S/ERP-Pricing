@@ -13,6 +13,7 @@ app.use(morgan('dev'));
 app.use(cors()); // dev: allow all
 app.use('/api/admin/tiers', require('./routes/adminTiers'));
 app.use('/api/admin', require('./routes/adminAuth'));
+app.use('/api/admin/shrouds', require('./routes/adminShrouds'));
 
 
 // -------- Health check --------

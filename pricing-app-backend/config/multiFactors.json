@@ -762,9 +762,10 @@
         "rate": 0
       },
       "pitch": {
-        "below": 0,
-        "above": 0
-      }
+        "below": -0.07,
+        "above": 0.15
+      },
+      "corbel": 0.15
     }
   },
   {
@@ -944,9 +945,9 @@
         "rate": 0.26
       },
       "inset": {
-        "standard": 0,
-        "interval": 0,
-        "rate": 0
+        "standard": 2.5,
+        "interval": 0.5,
+        "rate": 0.14
       },
       "skirt": {
         "standard": 0,
@@ -956,7 +957,8 @@
       "pitch": {
         "below": 0,
         "above": 0
-      }
+      },
+      "corbel": 0.15
     }
   },
   {
@@ -976,9 +978,9 @@
         "rate": 0.26
       },
       "inset": {
-        "standard": 0,
-        "interval": 0,
-        "rate": 0
+        "standard": 2.5,
+        "interval": 0.5,
+        "rate": 0.15
       },
       "skirt": {
         "standard": 0,
@@ -988,7 +990,8 @@
       "pitch": {
         "below": 0,
         "above": 0
-      }
+      },
+      "corbel": 0.15
     }
   },
   {

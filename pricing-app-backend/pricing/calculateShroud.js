@@ -1,36 +1,20 @@
-// pricing/calculateShroud.js — unified logic using config/shroudUnified
-const { metals, aliasIndex } = require('../config/shroudUnified');
+// pricing/calculateShroud.js — unified logic + overrides support
+const path = require('path');
 
 let tierCfg = {};
-try {
-  // Supports either { tiers:{...} } or { elite:1, vg:1.11969, ... }
-  tierCfg = require('../config/tier_pricing_factors');
-} catch {
-  // default to 1.0 if file not present
-}
+try { tierCfg = require('../config/tier_pricing_factors'); } catch {}
 
 const TIER_ALIAS = {
-  elite: 'elite',
-  value: 'val',
-  'value-gold': 'vg',
-  'value-silver': 'vs',
-  builder: 'bul',
-  homeowner: 'ho',
-  val: 'val',
-  vg: 'vg',
-  vs: 'vs',
-  bul: 'bul',
-  ho: 'ho'
+  elite:'elite', value:'val', 'value-gold':'vg', 'value-silver':'vs',
+  builder:'bul', homeowner:'ho', val:'val', vg:'vg', vs:'vs', bul:'bul', ho:'ho'
 };
 
 function resolveTierAndFactor(tierInput) {
   const raw = (tierInput || 'elite').toString().toLowerCase();
   const short = TIER_ALIAS[raw] || raw;
-
   const table = (tierCfg && typeof tierCfg === 'object')
     ? (tierCfg.tiers && typeof tierCfg.tiers === 'object' ? tierCfg.tiers : tierCfg)
     : {};
-
   const tryKeys = [short, raw, 'elite'];
   let factor = 1.0;
   for (const k of tryKeys) {
@@ -40,17 +24,47 @@ function resolveTierAndFactor(tierInput) {
   return { tierKey: short, factor };
 }
 
-function pickMetalKey(metalKey, metalTypeKey) {
+// ----- base + overrides loader -----
+function loadBase() {
+  try { delete require.cache[require.resolve('../config/shroudUnified')]; } catch {}
+  return require('../config/shroudUnified');
+}
+function loadOverrides() {
+  const p = path.join(__dirname, '../config/shroud_overrides.json');
+  try { delete require.cache[p]; } catch {}
+  try { return require(p); } catch { return {}; }
+}
+function mergeMetals() {
+  const { metals, aliasIndex } = loadBase();
+  const ov = loadOverrides();
+
+  // deep merge only prices
+  const out = JSON.parse(JSON.stringify(metals || {}));
+  for (const m of Object.keys(ov || {})) {
+    out[m] = out[m] || {};
+    out[m].prices = out[m].prices || {};
+    const mPrices = ov[m]?.prices || {};
+    for (const model of Object.keys(mPrices)) {
+      out[m].prices[model] = { ...(out[m].prices[model] || {}), ...(mPrices[model] || {}) };
+    }
+  }
+  return { metals: out, aliasIndex };
+}
+
+// alias support unchanged
+function pickMetalKey(metalKey, metalTypeKey, aliasIndex) {
   const candidates = [metalKey, metalTypeKey].filter(Boolean).map(s => s.toLowerCase());
   for (const c of candidates) {
-    const key = aliasIndex[c] || c; // e.g., ss24pol → stainless
-    if (metals[key]) return key;
+    const key = aliasIndex[c] || c;
+    if (key && key in merged.metals) return key;
   }
   return null;
 }
 
 function calculateShroud(input) {
-  // Accept both app-style fields and API-style fields
+  const merged = mergeMetals();
+  const { metals, aliasIndex } = merged;
+
   const lengthIn = input.length ?? input.lengthVal;
   const widthIn  = input.width  ?? input.widthVal;
   const modelIn  = input.model  ?? input.product;
@@ -64,7 +78,13 @@ function calculateShroud(input) {
   const L = Number(lengthIn);
   const W = Number(widthIn);
 
-  const metalKey = pickMetalKey(metal, metalType);
+  // resolve canonical metal key (e.g., ss24pol -> stainless)
+  const candidates = [metal, metalType].filter(Boolean).map(s => s.toLowerCase());
+  let metalKey = null;
+  for (const c of candidates) {
+    const k = aliasIndex[c] || c;
+    if (metals[k]) { metalKey = k; break; }
+  }
   if (!metalKey) return { error: `Unsupported metal type for shroud rules: ${metal || metalType}` };
 
   const config = metals[metalKey];
@@ -80,40 +100,24 @@ function calculateShroud(input) {
     const match = (rules.perimeterRules || []).find(r => perimeter < r.max);
 
     if (!match) {
-      return {
-        metal: metalKey,
-        model: modelKey,
-        perimeter,
-        sizeCategory: 'N/A',
-        price: 'DESIGN',
-        tier: tierKey,
-        adjustedFactor: +factor.toFixed(4),
-        message: 'Office to Price'
-      };
+      return { metal: metalKey, model: modelKey, perimeter, sizeCategory: 'N/A', price: 'DESIGN',
+               tier: tierKey, adjustedFactor: +factor.toFixed(4), message: 'Office to Price' };
     }
 
     const size = match.size;
     const base = prices[modelKey]?.[size] ?? 'DESIGN';
     const final = typeof base === 'number' ? +(base * factor).toFixed(2) : base;
 
-    return {
-      metal: metalKey,
-      model: modelKey,
-      perimeter,
-      sizeCategory: size,
-      price: base,
-      tier: tierKey,
-      adjustedFactor: +factor.toFixed(4),
-      finalPrice: typeof final === 'number' ? final : undefined,
-      message: base === 'DESIGN' ? 'Office to Price' : 'Price found'
-    };
+    return { metal: metalKey, model: modelKey, perimeter, sizeCategory: size, price: base,
+             tier: tierKey, adjustedFactor: +factor.toFixed(4),
+             finalPrice: typeof final === 'number' ? final : undefined,
+             message: base === 'DESIGN' ? 'Office to Price' : 'Price found' };
   }
 
   // Non-copper: L+W+1 size cutoffs
   const total = L + W + 1;
   const order = ['small', 'medium', 'large', 'small_tall', 'large_tall'];
   let sizeCategory = null;
-
   for (const size of order) {
     if (rules.restricted?.includes(size)) continue;
     const max = rules.sizeCutoffs?.[size];
@@ -122,30 +126,17 @@ function calculateShroud(input) {
   }
 
   if (!sizeCategory) {
-    return {
-      metal: metalKey,
-      model: modelKey,
-      sizeCategory: 'N/A',
-      price: 'DESIGN',
-      tier: tierKey,
-      adjustedFactor: +factor.toFixed(4),
-      message: 'Too large or not allowed'
-    };
+    return { metal: metalKey, model: modelKey, sizeCategory: 'N/A', price: 'DESIGN',
+             tier: tierKey, adjustedFactor: +factor.toFixed(4), message: 'Too large or not allowed' };
   }
 
   const base = prices[modelKey]?.[sizeCategory] ?? 'DESIGN';
   const final = typeof base === 'number' ? +(base * factor).toFixed(2) : base;
 
-  return {
-    metal: metalKey,
-    model: modelKey,
-    sizeCategory,
-    price: base,
-    tier: tierKey,
-    adjustedFactor: +factor.toFixed(4),
-    finalPrice: typeof final === 'number' ? final : undefined,
-    message: base === 'DESIGN' ? 'Office to Price' : 'Price found'
-  };
+  return { metal: metalKey, model: modelKey, sizeCategory, price: base,
+           tier: tierKey, adjustedFactor: +factor.toFixed(4),
+           finalPrice: typeof final === 'number' ? final : undefined,
+           message: base === 'DESIGN' ? 'Office to Price' : 'Price found' };
 }
 
-module.exports = { calculateShroud }; // <<— named export to match your destructured import
+module.exports = { calculateShroud };
