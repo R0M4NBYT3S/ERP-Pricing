@@ -1,31 +1,65 @@
 import React, { useEffect, useState } from "react";
-import { ADMIN_BASE, ANNOUNCE_BASE } from "../config/api";
 
-function Admin() {
-  const [tab, setTab] = useState("multi");
+// ---- API roots ----
+const API_ROOT   = `${window.location.protocol}//${window.location.hostname}:3001/api`;
+const ADMIN_ROOT = `${API_ROOT}/admin`;
+const TIERS_ENDPOINT = `${ADMIN_ROOT}/tiers`;
 
-  // ---------- Auth ----------
-  const [currentUser, setCurrentUser] = useState(
-    localStorage.getItem("adminUser") || ""
-  );
+// ---- Shroud shape helpers ----
+const META_KEYS = new Set(["alias", "rules", "meta", "__meta"]);
+function productRootForMetal(node) {
+  if (!node || typeof node !== "object") return {};
+  if (node.prices && typeof node.prices === "object") return node.prices;
+  if (node.products && typeof node.products === "object") return node.products;
+  return node;
+}
+function sizeRootForProduct(prodNode) {
+  if (!prodNode || typeof prodNode !== "object") return {};
+  if (prodNode.prices && typeof prodNode.prices === "object") return prodNode.prices;
+  if (prodNode.sizes && typeof prodNode.sizes === "object") return prodNode.sizes;
+  return prodNode;
+}
+
+async function getJSON(url) {
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  const ct = res.headers.get("content-type") || "";
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+  if (!ct.includes("application/json")) throw new Error(`Expected JSON, got ${ct || "unknown"}`);
+  return res.json();
+}
+
+// ⬅️ add corbel default (others unchanged)
+const DEFAULT_ADJUSTMENTS = {
+  screen:   { standard: 0, interval: 0, rate: 0 },
+  overhang: { standard: 0, interval: 0, rate: 0 },
+  inset:    { standard: 0, interval: 0, rate: 0 },
+  skirt:    { standard: 0, interval: 0, rate: 0 },
+  pitch:    { below: 0, above: 0 },
+  corbel:   0.15, // add-to-factor when corbel sum > 9 (for corbel SKUs)
+};
+
+export default function Admin() {
+  const [tab, setTab] = useState("factors");
+
+  // ================= AUTH =================
+  const [currentUser, setCurrentUser] = useState(localStorage.getItem("adminUser") || "");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [showPw, setShowPw] = useState(false);
 
+  const authHeaders = currentUser ? { "X-Admin-User": currentUser } : {};
+
   const signIn = async (e) => {
     e.preventDefault();
     setIsLoggingIn(true);
     setLoginError("");
     try {
-      const res = await fetch(`${ADMIN_BASE}/login`, {
+      const res = await fetch(`${ADMIN_ROOT}/login`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: loginUsername,
-          password: loginPassword,
-        }),
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || "Login failed");
@@ -33,12 +67,9 @@ function Admin() {
       setCurrentUser(user);
       localStorage.setItem("adminUser", user);
       setLoginPassword("");
+      setLoginUsername("");
     } catch (err) {
-      setLoginError(
-        err.message.includes("Failed to fetch")
-          ? "Unable to reach server"
-          : err.message
-      );
+      setLoginError(err.message || "Login failed");
     } finally {
       setIsLoggingIn(false);
     }
@@ -51,709 +82,534 @@ function Admin() {
     setLoginPassword("");
   };
 
-  // ---------- Multi-Flue ----------
-  const defaultAdjustments = {
-    screen: { standard: 0, interval: 0, rate: 0 },
-    overhang: { standard: 0, interval: 0, rate: 0 },
-    inset: { standard: 0, interval: 0, rate: 0 },
-    skirt: { standard: 0, interval: 0, rate: 0 },
-    pitch: { below: 0, above: 0 },
+  // ================= FACTORS (read + update factor & adjustments) =================
+  const [factorsRaw, setFactorsRaw] = useState(null);
+  const [loadingFactors, setLoadingFactors] = useState(false);
+  const [factorsErr, setFactorsErr] = useState("");
+
+  const [fMetal, setFMetal] = useState("");
+  const [fProduct, setFProduct] = useState("");
+  const [currentFactor, setCurrentFactor] = useState(null);
+  const [newFactor, setNewFactor] = useState("");
+  const [adj, setAdj] = useState(structuredClone(DEFAULT_ADJUSTMENTS));
+
+  const loadFactors = async () => {
+    setLoadingFactors(true); setFactorsErr("");
+    try { setFactorsRaw((await getJSON(`${ADMIN_ROOT}/factors`)) || {}); }
+    catch (e) { setFactorsErr(e.message || String(e)); setFactorsRaw(null); }
+    finally { setLoadingFactors(false); }
   };
 
-  const [multiFactors, setMultiFactors] = useState({});
-  const [multiMetal, setMultiMetal] = useState("");
-  const [multiProduct, setMultiProduct] = useState("");
-  const [factorVal, setFactorVal] = useState("");
-  const [adjustments, setAdjustments] = useState(defaultAdjustments);
+  const factors = (() => {
+    const raw = factorsRaw;
+    if (!raw || typeof raw !== "object") return {};
+    const looksMetal = Object.values(raw).some(v => v && typeof v === "object" && !("factor" in v));
+    if (looksMetal) return raw;
+    if (Object.values(raw).every(v => v && typeof v === "object" && ("factor" in v || "adjustments" in v))) {
+      return { default: raw };
+    }
+    return raw;
+  })();
 
-  // ---------- Shrouds ----------
+  const metals = Object.keys(factors || {});
+  const products = fMetal ? Object.keys(factors[fMetal] || {}) : [];
+
+  useEffect(() => {
+    if (fMetal && fProduct) {
+      const entry = factors?.[fMetal]?.[fProduct] || {};
+      const fac = entry?.factor;
+      setCurrentFactor(Number.isFinite(fac) ? fac : null);
+      setNewFactor(Number.isFinite(fac) ? String(fac) : "");
+      const a = entry?.adjustments || {};
+      const isCorbel = /corbel/i.test(fProduct);
+      setAdj({
+        screen:   { ...DEFAULT_ADJUSTMENTS.screen,   ...(a.screen   || {}) },
+        overhang: { ...DEFAULT_ADJUSTMENTS.overhang, ...(a.overhang || {}) },
+        inset:    { ...DEFAULT_ADJUSTMENTS.inset,    ...(a.inset    || {}) },
+        // hide/ignore skirt for corbel SKUs (still stored, but not shown)
+        skirt:    { ...DEFAULT_ADJUSTMENTS.skirt,    ...(a.skirt    || {}) },
+        pitch:    { ...DEFAULT_ADJUSTMENTS.pitch,    ...(a.pitch    || {}) },
+        corbel:   Number.isFinite(a.corbel) ? a.corbel : (isCorbel ? DEFAULT_ADJUSTMENTS.corbel : 0),
+      });
+    } else {
+      setCurrentFactor(null);
+      setNewFactor("");
+      setAdj(structuredClone(DEFAULT_ADJUSTMENTS));
+    }
+  }, [fMetal, fProduct, factors]);
+
+  const updateFactorAndAdjustments = async () => {
+    if (!currentUser) return alert("Sign in first.");
+    if (!fMetal || !fProduct) return alert("Select metal and product.");
+    const value = parseFloat(newFactor);
+    if (!Number.isFinite(value)) return alert("Enter a valid factor.");
+    const payload = { metal: fMetal, product: fProduct, factor: value, adjustments: adj };
+    const res = await fetch(`${ADMIN_ROOT}/factors`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", ...authHeaders },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(t || "Failed to update factor/adjustments");
+    }
+    await loadFactors();
+  };
+
+  const setAdjField = (group, key, val) => {
+    const num = parseFloat(val);
+    setAdj(prev => ({ ...prev, [group]: { ...prev[group], [key]: Number.isFinite(num) ? num : 0 } }));
+  };
+  const setAdjScalar = (key, val) => {
+    const num = parseFloat(val);
+    setAdj(prev => ({ ...prev, [key]: Number.isFinite(num) ? num : 0 }));
+  };
+  const resetAdjustments = () => setAdj(structuredClone(DEFAULT_ADJUSTMENTS));
+
+  // ================= SHROUDS (read + update) =================
   const [shroudData, setShroudData] = useState({});
-  const [selectedMetal, setSelectedMetal] = useState("");
-  const [selectedProduct, setSelectedProduct] = useState("");
-  const [selectedSize, setSelectedSize] = useState("");
+  const [loadingShrouds, setLoadingShrouds] = useState(false);
+  const [shroudErr, setShroudErr] = useState("");
+
+  const [metal, setMetal] = useState("");
+  const [product, setProduct] = useState("");
+  const [size, setSize] = useState("");
   const [currentPrice, setCurrentPrice] = useState(null);
   const [newPrice, setNewPrice] = useState("");
 
-  // ---------- Announcements ----------
-  const [announcements, setAnnouncements] = useState([]);
-  const [newAnnouncement, setNewAnnouncement] = useState("");
+  const loadShrouds = async () => {
+    setLoadingShrouds(true); setShroudErr("");
+    try { setShroudData((await getJSON(`${ADMIN_ROOT}/shrouds`)) || {}); }
+    catch (e) { setShroudErr(e.message || String(e)); setShroudData({}); }
+    finally { setLoadingShrouds(false); }
+  };
 
-  // ---------- Load data when tab changes & user is signed in ----------
   useEffect(() => {
-    if (!currentUser) return;
-
-    if (tab === "multi") {
-      fetch(`${ADMIN_BASE}/factors`)
-        .then((r) => r.json())
-        .then((data) => setMultiFactors(data || {}))
-        .catch(() => setMultiFactors({}));
-    } else if (tab === "shrouds") {
-      fetch(`${ADMIN_BASE}/shrouds`)
-        .then((r) => r.json())
-        .then((data) => setShroudData(data || {}))
-        .catch(() => setShroudData({}));
-    } else if (tab === "announce") {
-      fetch(`${ANNOUNCE_BASE}`)
-        .then((r) => r.json())
-        .then((data) => setAnnouncements(Array.isArray(data) ? data : []))
-        .catch(() => setAnnouncements([]));
-    }
-  }, [tab, currentUser]);
-
-  // ---------- Multi: sync selection -> inputs ----------
-  useEffect(() => {
-    if (multiMetal && multiProduct) {
-      const entry = multiFactors[multiMetal]?.[multiProduct];
-      if (entry) {
-        setFactorVal(entry.factor ?? "");
-        const clonedAdj = JSON.parse(
-          JSON.stringify(entry.adjustments || defaultAdjustments)
-        );
-        setAdjustments(clonedAdj);
+    try {
+      if (metal && product && size) {
+        const pMap = productRootForMetal(shroudData?.[metal]);
+        const sMap = sizeRootForProduct(pMap?.[product]);
+        let val = sMap?.[size];
+        if (val && typeof val === "object" && "price" in val) val = val.price;
+        const num = Number(val);
+        setCurrentPrice(Number.isFinite(num) ? num : null);
+        setNewPrice(Number.isFinite(num) ? String(num) : "");
       } else {
-        setFactorVal("");
-        setAdjustments(JSON.parse(JSON.stringify(defaultAdjustments)));
+        setCurrentPrice(null);
+        setNewPrice("");
       }
-    } else {
-      setFactorVal("");
-      setAdjustments(JSON.parse(JSON.stringify(defaultAdjustments)));
+    } catch {
+      setCurrentPrice(null);
+      setNewPrice("");
     }
-  }, [multiMetal, multiProduct, multiFactors]);
+  }, [metal, product, size, shroudData]);
 
-  // ---------- Shroud derived lists ----------
-  const metals = Object.keys(shroudData || {});
-  const productsForMetal = selectedMetal
-    ? Object.keys(shroudData[selectedMetal] || {})
-    : [];
-  const sizesForProduct =
-    selectedMetal && selectedProduct
-      ? Object.keys(shroudData[selectedMetal]?.[selectedProduct] || {})
-      : [];
+  const updateShroudPrice = async () => {
+    if (!currentUser) return alert("Sign in first.");
+    if (!metal || !product || !size || !newPrice) return alert("Select all fields and enter a price.");
+    const payload = { metal, product, size, newPrice: parseFloat(newPrice) };
+    const res = await fetch(`${ADMIN_ROOT}/shrouds`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", ...authHeaders },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(t || "Failed to update price");
+    }
+    await loadShrouds();
+  };
 
-  // Shroud: show current price & seed new price
+  const metalsS = Object.keys(shroudData || {});
+  const productsMap = metal ? productRootForMetal(shroudData[metal]) : {};
+  const productsS = metal ? Object.keys(productsMap).filter((k) => !META_KEYS.has(k)) : [];
+  const sizesMap = metal && product ? sizeRootForProduct(productsMap[product]) : {};
+  const sizesS = Object.keys(sizesMap || {});
+
+  // ================= ANNOUNCEMENTS (list + create) =================
+  const [anns, setAnns] = useState([]);
+  const [annsErr, setAnnsErr] = useState("");
+  const [loadingAnns, setLoadingAnns] = useState(false);
+
+  const [newAnn, setNewAnn] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addErr, setAddErr] = useState("");
+
+  const loadAnns = async () => {
+    setLoadingAnns(true); setAnnsErr("");
+    try { const data = await getJSON(`${API_ROOT}/announcements`); setAnns(Array.isArray(data) ? data : []); }
+    catch (e) { setAnnsErr(e.message || String(e)); setAnns([]); }
+    finally { setLoadingAnns(false); }
+  };
+
+  const addAnnouncement = async () => {
+    const text = newAnn.trim();
+    if (!currentUser) return alert("Sign in first.");
+    if (!text) return setAddErr("Enter a message first.");
+    setAdding(true); setAddErr("");
+    try {
+      const res = await fetch(`${API_ROOT}/announcements`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json", ...authHeaders },
+        body: JSON.stringify({ text }),
+      });
+      const ct = res.headers.get("content-type") || "";
+      const payload = ct.includes("application/json") ? await res.json() : await res.text();
+      if (!res.ok) throw new Error(typeof payload === "string" ? payload : (payload?.message || "Failed to add"));
+      if (payload?.announcement) setAnns((p) => [...p, payload.announcement]); else await loadAnns();
+      setNewAnn("");
+    } catch (e) { setAddErr(e.message || String(e)); }
+    finally { setAdding(false); }
+  };
+
+  // ================= TIERS (read + update) =================
+  const [tiers, setTiers] = useState(null);
+  const [tiersErr, setTiersErr] = useState("");
+  const [loadingTiers, setLoadingTiers] = useState(false);
+
+  const [tierKey, setTierKey] = useState("");
+  const [tierCurrent, setTierCurrent] = useState(null);
+  const [tierNew, setTierNew] = useState("");
+
+  const loadTiers = async () => {
+    setLoadingTiers(true); setTiersErr("");
+    try {
+      const resp = await getJSON(TIERS_ENDPOINT);
+      const data = (resp && typeof resp === 'object' && !Array.isArray(resp) && resp.tiers) ? resp.tiers : resp || {};
+      setTiers(data);
+    } catch (e) {
+      setTiersErr(e.message || String(e));
+      setTiers(null);
+    } finally {
+      setLoadingTiers(false);
+    }
+  };
+
   useEffect(() => {
-    if (selectedMetal && selectedProduct && selectedSize) {
-      const price =
-        shroudData[selectedMetal]?.[selectedProduct]?.[selectedSize];
-      setCurrentPrice(price ?? null);
-      setNewPrice(price ?? "");
+    if (tierKey && tiers && Object.prototype.hasOwnProperty.call(tiers, tierKey)) {
+      const v = tiers[tierKey];
+      const num = Number(v);
+      setTierCurrent(Number.isFinite(num) ? num : null);
+      setTierNew(Number.isFinite(num) ? String(num) : "");
+    } else {
+      setTierCurrent(null);
+      setTierNew("");
     }
-  }, [selectedMetal, selectedProduct, selectedSize, shroudData]);
+  }, [tierKey, tiers]);
 
-  // ---------- Actions ----------
-  const handleShroudUpdate = async () => {
-    if (!selectedMetal || !selectedProduct || !selectedSize || !newPrice) {
-      alert("Please select all fields and enter a price.");
-      return;
+  const updateTier = async () => {
+    if (!currentUser) return alert("Sign in first.");
+    if (!tierKey) return alert("Select a tier.");
+    const value = parseFloat(tierNew);
+    if (!Number.isFinite(value)) return alert("Enter a valid number.");
+    const res = await fetch(TIERS_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", ...authHeaders },
+      body: JSON.stringify({ tier: tierKey, factor: value }),
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(t || "Failed to update tier");
     }
-    try {
-      const res = await fetch(`${ADMIN_BASE}/shrouds`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Admin-User": currentUser, // audit header
-        },
-        body: JSON.stringify({
-          metal: selectedMetal,
-          product: selectedProduct,
-          size: selectedSize,
-          newPrice: parseFloat(newPrice),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.success === false) {
-        throw new Error(data.message || "Failed to update price.");
-      }
-      alert("Price updated!");
-      const updated = await fetch(`${ADMIN_BASE}/shrouds`).then((r) => r.json());
-      setShroudData(updated);
-    } catch (err) {
-      console.error("Error updating shroud price:", err);
-      alert(err.message || "Error updating price.");
-    }
+    await loadTiers();
   };
 
-  const handleMultiUpdate = async () => {
-    if (!multiMetal || !multiProduct) {
-      alert("Please select metal and product.");
-      return;
-    }
-    try {
-      const res = await fetch(`${ADMIN_BASE}/factors`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Admin-User": currentUser, // audit header
-        },
-        body: JSON.stringify({
-          metal: multiMetal,
-          product: multiProduct,
-          factor: parseFloat(factorVal),
-          adjustments,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!(data.success || res.ok)) throw new Error("Failed to update factor.");
-      alert("Factor updated!");
-      const updated = await fetch(`${ADMIN_BASE}/factors`).then((r) => r.json());
-      setMultiFactors(updated);
-    } catch (err) {
-      console.error("Error updating factor:", err);
-      alert(err.message || "Error updating factor.");
-    }
-  };
+  // ================= initial loads per tab =================
+  useEffect(() => {
+    if (tab === "factors") loadFactors();
+    if (tab === "shrouds") loadShrouds();
+    if (tab === "announcements") loadAnns();
+    if (tab === "tiers") loadTiers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
-  const handleAddAnnouncement = async () => {
-    if (!newAnnouncement.trim()) return;
-    try {
-      const res = await fetch(`${ANNOUNCE_BASE}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Admin-User": currentUser, // audit header
-        },
-        body: JSON.stringify({ text: newAnnouncement }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) throw new Error("Failed to add announcement");
-      const added = data.announcement;
-      setAnnouncements((prev) => [...prev, added]);
-      setNewAnnouncement("");
-    } catch (err) {
-      console.error("Error adding announcement:", err);
-      alert(err.message || "Error adding announcement.");
-    }
-  };
+  const Pretty = ({ value }) => (
+    <pre className="text-xs bg-gray-900 text-green-200 p-3 rounded overflow-auto max-h-80">
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  );
 
-  const handleDeleteAnnouncement = async (id) => {
-    if (!window.confirm("Delete this announcement?")) return;
-    try {
-      const res = await fetch(`${ANNOUNCE_BASE}/${id}`, {
-        method: "DELETE",
-        headers: { "X-Admin-User": currentUser }, // audit header
-      });
-      if (!res.ok) throw new Error("Failed to delete announcement");
-      setAnnouncements((prev) => prev.filter((a) => a.id !== id));
-    } catch (err) {
-      console.error("Error deleting announcement:", err);
-      alert(err.message || "Error deleting announcement.");
-    }
-  };
+  // ✅ moved out of JSX
+  const isCorbelSelected = /corbel/i.test(fProduct);
 
-  // ---------- UI ----------
   return (
-    <div className="min-h-screen w-full bg-gray-100 flex flex-col items-center p-6 relative">
-      <a
-        href="/"
-        className="mb-4 px-3 py-1 bg-gray-700 text-white rounded hover:bg-gray-600 text-sm shadow-md"
-      >
-        ⬅ Back to Main
-      </a>
-
-      <div className="absolute top-6 right-6 text-sm">
-        {currentUser ? (
-          <div className="flex items-center space-x-2">
-            <span className="text-gray-700">
-              Signed in as <b>{currentUser}</b>
-            </span>
-            <button
-              onClick={signOut}
-              className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded"
-            >
-              Sign out
-            </button>
+    <div className="min-h-screen w-full bg-gray-100 px-4 py-8">
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <a href="/" className="px-3 py-1 bg-gray-800 text-white rounded hover:bg-gray-700 text-sm">⬅ Back</a>
+          <h1 className="text-2xl font-bold">Admin</h1>
+          <div className="text-sm">
+            {currentUser ? (
+              <div className="flex items-center gap-2">
+                <span className="text-gray-700">Signed in as <b>{currentUser}</b></span>
+                <button onClick={signOut} className="px-2 py-1 bg-gray-200 hover:bg-gray-300 rounded">Sign out</button>
+              </div>
+            ) : <span className="text-gray-500">Not signed in</span>}
           </div>
-        ) : null}
-      </div>
+        </div>
 
-      <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
+        {/* Tabs */}
+        <div className="flex gap-2 mb-6">
+          {[
+            { id: "factors", label: "Factors" },
+            { id: "shrouds", label: "Shrouds" },
+            { id: "tiers", label: "Tiers" },
+            { id: "announcements", label: "Announcements" },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-2 rounded ${tab === t.id ? "bg-blue-600 text-white" : "bg-white border"}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-      {/* Tabs */}
-      <div className="flex space-x-4 mb-6">
-        <button
-          className={`px-4 py-2 rounded ${
-            tab === "multi" ? "bg-blue-600 text-white" : "bg-gray-200"
-          }`}
-          onClick={() => setTab("multi")}
-        >
-          Multi-Flue Factors
-        </button>
-        <button
-          className={`px-4 py-2 rounded ${
-            tab === "shrouds" ? "bg-blue-600 text-white" : "bg-gray-200"
-          }`}
-          onClick={() => setTab("shrouds")}
-        >
-          Shroud Pricing
-        </button>
-        <button
-          className={`px-4 py-2 rounded ${
-            tab === "chase" ? "bg-blue-600 text-white" : "bg-gray-200"
-          }`}
-          onClick={() => setTab("chase")}
-        >
-          Chase Covers
-        </button>
-        <button
-          className={`px-4 py-2 rounded ${
-            tab === "announce" ? "bg-blue-600 text-white" : "bg-gray-200"
-          }`}
-          onClick={() => setTab("announce")}
-        >
-          Announcements
-        </button>
-      </div>
+        {/* ================= Factors Tab ================= */}
+        {tab === "factors" && (
+          <section className="bg-white rounded-xl shadow p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Multi-Flue Factors</h2>
+              <button
+                onClick={loadFactors}
+                className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                disabled={loadingFactors}
+              >
+                {loadingFactors ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
 
-      {/* Multi-Flue Tab */}
-      {tab === "multi" && (
-        <div className="w-full max-w-xl bg-white shadow rounded p-6">
-          <h2 className="text-xl font-semibold mb-4">Multi-Flue Factor Editor</h2>
+            {factorsErr && <div className="text-red-600 text-sm">{factorsErr}</div>}
 
-          <label className="block mb-2">Metal Type</label>
-          <select
-            value={multiMetal}
-            onChange={(e) => {
-              setMultiMetal(e.target.value);
-              setMultiProduct("");
-            }}
-            className="w-full p-2 border rounded mb-4"
-          >
-            <option value="">Select Metal</option>
-            {Object.keys(multiFactors || {}).map((metal) => (
-              <option key={metal} value={metal}>
-                {metal}
-              </option>
-            ))}
-          </select>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <select
+                className="border rounded p-2"
+                value={fMetal}
+                onChange={(e) => { setFMetal(e.target.value); setFProduct(""); }}
+              >
+                <option value="">Select Metal</option>
+                {metals.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
 
-          <label className="block mb-2">Product</label>
-          <select
-            value={multiProduct}
-            onChange={(e) => setMultiProduct(e.target.value)}
-            className="w-full p-2 border rounded mb-4"
-            disabled={!multiMetal}
-          >
-            <option value="">Select Product</option>
-            {multiMetal &&
-              Object.keys(multiFactors[multiMetal] || {}).map((prod) => (
-                <option key={prod} value={prod}>
-                  {prod}
-                </option>
-              ))}
-          </select>
+              <select
+                className="border rounded p-2"
+                value={fProduct}
+                onChange={(e) => setFProduct(e.target.value)}
+                disabled={!fMetal}
+              >
+                <option value="">{fMetal ? "Select Product" : "Select metal first"}</option>
+                {products.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
 
-          {multiMetal && multiProduct && (
-            <>
-              <label className="block mb-2">Factor</label>
+              <div className="border rounded p-2 bg-gray-50 flex items-center">
+                <div className="text-sm text-gray-600">Current Factor:&nbsp;</div>
+                <div className="font-semibold">{currentFactor ?? "—"}</div>
+              </div>
+            </div>
+
+            <div className="border rounded p-3">
+              <label className="block text-sm mb-1">New Factor</label>
               <input
                 type="number"
                 step="0.01"
-                value={factorVal}
-                onChange={(e) => setFactorVal(e.target.value)}
-                className="w-full p-2 border rounded mb-4"
+                className="w-full border rounded p-2"
+                value={newFactor}
+                onChange={(e) => setNewFactor(e.target.value)}
+                disabled={!fProduct}
               />
+            </div>
 
-              <h3 className="text-lg font-semibold mb-2">Adjustments</h3>
-
+            {/* Adjustments grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Screen */}
-              <div className="mb-4">
-                <p className="font-semibold mb-2">Screen</p>
-                <label className="block text-sm mb-1">Standard</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.screen.standard}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      screen: {
-                        ...prev.screen,
-                        standard: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded mb-2"
-                />
-                <label className="block text-sm mb-1">Interval</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.screen.interval}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      screen: {
-                        ...prev.screen,
-                        interval: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded mb-2"
-                />
-                <label className="block text-sm mb-1">Rate</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.screen.rate}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      screen: {
-                        ...prev.screen,
-                        rate: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded"
-                />
+              <div className="border rounded p-3">
+                <h3 className="font-semibold mb-2">Screen</h3>
+                <FieldTriple label="Standard" value={adj.screen.standard} onChange={(v)=>setAdjField('screen','standard',v)} />
+                <FieldTriple label="Interval" value={adj.screen.interval} onChange={(v)=>setAdjField('screen','interval',v)} />
+                <FieldTriple label="Rate"     value={adj.screen.rate}     onChange={(v)=>setAdjField('screen','rate',v)} />
               </div>
 
               {/* Overhang */}
-              <div className="mb-4">
-                <p className="font-semibold mb-2">Overhang</p>
-                <label className="block text-sm mb-1">Standard</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.overhang.standard}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      overhang: {
-                        ...prev.overhang,
-                        standard: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded mb-2"
-                />
-                <label className="block text-sm mb-1">Interval</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.overhang.interval}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      overhang: {
-                        ...prev.overhang,
-                        interval: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded mb-2"
-                />
-                <label className="block text-sm mb-1">Rate</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.overhang.rate}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      overhang: {
-                        ...prev.overhang,
-                        rate: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded"
-                />
+              <div className="border rounded p-3">
+                <h3 className="font-semibold mb-2">Overhang</h3>
+                <FieldTriple label="Standard" value={adj.overhang.standard} onChange={(v)=>setAdjField('overhang','standard',v)} />
+                <FieldTriple label="Interval" value={adj.overhang.interval} onChange={(v)=>setAdjField('overhang','interval',v)} />
+                <FieldTriple label="Rate"     value={adj.overhang.rate}     onChange={(v)=>setAdjField('overhang','rate',v)} />
               </div>
 
               {/* Inset */}
-              <div className="mb-4">
-                <p className="font-semibold mb-2">Inset</p>
-                <label className="block text-sm mb-1">Standard</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.inset.standard}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      inset: {
-                        ...prev.inset,
-                        standard: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded mb-2"
-                />
-                <label className="block text-sm mb-1">Interval</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.inset.interval}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      inset: {
-                        ...prev.inset,
-                        interval: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded mb-2"
-                />
-                <label className="block text-sm mb-1">Rate</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.inset.rate}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      inset: {
-                        ...prev.inset,
-                        rate: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded"
-                />
+              <div className="border rounded p-3">
+                <h3 className="font-semibold mb-2">Inset</h3>
+                <FieldTriple label="Standard" value={adj.inset.standard} onChange={(v)=>setAdjField('inset','standard',v)} />
+                <FieldTriple label="Interval" value={adj.inset.interval} onChange={(v)=>setAdjField('inset','interval',v)} />
+                <FieldTriple label="Rate"     value={adj.inset.rate}     onChange={(v)=>setAdjField('inset','rate',v)} />
               </div>
 
-              {/* Skirt */}
-              <div className="mb-4">
-                <p className="font-semibold mb-2">Skirt</p>
-                <label className="block text-sm mb-1">Standard</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.skirt.standard}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      skirt: {
-                        ...prev.skirt,
-                        standard: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded mb-2"
-                />
-                <label className="block text-sm mb-1">Interval</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.skirt.interval}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      skirt: {
-                        ...prev.skirt,
-                        interval: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded mb-2"
-                />
-                <label className="block text-sm mb-1">Rate</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.skirt.rate}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      skirt: {
-                        ...prev.skirt,
-                        rate: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded"
-                />
-              </div>
+              {/* Skirt (hidden for corbel SKUs) */}
+              {!isCorbelSelected && (
+                <div className="border rounded p-3">
+                  <h3 className="font-semibold mb-2">Skirt</h3>
+                  <FieldTriple label="Standard" value={adj.skirt.standard} onChange={(v)=>setAdjField('skirt','standard',v)} />
+                  <FieldTriple label="Interval" value={adj.skirt.interval} onChange={(v)=>setAdjField('skirt','interval',v)} />
+                  <FieldTriple label="Rate"     value={adj.skirt.rate}     onChange={(v)=>setAdjField('skirt','rate',v)} />
+                </div>
+              )}
 
               {/* Pitch */}
-              <div className="mb-4">
-                <p className="font-semibold mb-2">Pitch</p>
-                <label className="block text-sm mb-1">Below</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.pitch.below}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      pitch: {
-                        ...prev.pitch,
-                        below: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded mb-2"
-                />
-                <label className="block text-sm mb-1">Above</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={adjustments.pitch.above}
-                  onChange={(e) =>
-                    setAdjustments((prev) => ({
-                      ...prev,
-                      pitch: {
-                        ...prev.pitch,
-                        above: parseFloat(e.target.value),
-                      },
-                    }))
-                  }
-                  className="w-full p-2 border rounded"
-                />
+              <div className="border rounded p-3 md:col-span-2">
+                <h3 className="font-semibold mb-2">Pitch</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Field label="Below" value={adj.pitch.below} onChange={(v)=>setAdjField('pitch','below',v)} />
+                  <Field label="Above" value={adj.pitch.above} onChange={(v)=>setAdjField('pitch','above',v)} />
+                </div>
               </div>
 
-              <button
-                onClick={handleMultiUpdate}
-                className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700"
-              >
-                Update Factor
-              </button>
-            </>
-          )}
-        </div>
-      )}
+              {/* Corbel (>9) add — only for corbel SKUs */}
+              {isCorbelSelected && (
+                <div className="border rounded p-3 md:col-span-2">
+                  <h3 className="font-semibold mb-2">Corbel (&gt; 9) add</h3>
+                  <Field
+                    label="Add to factor when inset + overhang + skirt &gt; 9"
+                    value={adj.corbel}
+                    onChange={(v)=>setAdjScalar('corbel', v)}
+                  />
+                </div>
+              )}
+            </div>  {/* end adjustments grid */}
 
-      {/* Shroud Tab */}
-      {tab === "shrouds" && (
-        <div className="w-full max-w-xl bg-white shadow rounded p-6">
-          <h2 className="text-xl font-semibold mb-4">Shroud Price Editor</h2>
-
-          <label className="block mb-2">Metal Type</label>
-          <select
-            value={selectedMetal}
-            onChange={(e) => {
-              setSelectedMetal(e.target.value);
-              setSelectedProduct("");
-              setSelectedSize("");
-            }}
-            className="w-full p-2 border rounded mb-4"
-          >
-            <option value="">Select Metal</option>
-            {metals.map((metal) => (
-              <option key={metal} value={metal}>
-                {metal}
-              </option>
-            ))}
-          </select>
-
-          <label className="block mb-2">Product</label>
-          <select
-            value={selectedProduct}
-            onChange={(e) => {
-              setSelectedProduct(e.target.value);
-              setSelectedSize("");
-            }}
-            className="w-full p-2 border rounded mb-4"
-            disabled={!selectedMetal}
-          >
-            <option value="">Select Product</option>
-            {productsForMetal.map((prod) => (
-              <option key={prod} value={prod}>
-                {prod}
-              </option>
-            ))}
-          </select>
-
-          <label className="block mb-2">Size</label>
-          <select
-            value={selectedSize}
-            onChange={(e) => setSelectedSize(e.target.value)}
-            className="w-full p-2 border rounded mb-4"
-            disabled={!selectedProduct}
-          >
-            <option value="">Select Size</option>
-            {sizesForProduct.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
-
-          {selectedSize && (
-            <div className="mb-4">
-              <p className="mb-2">
-                Current Price:{" "}
-                <span className="font-bold">
-                  {currentPrice !== null ? `$${currentPrice}` : "N/A"}
-                </span>
-              </p>
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Enter New Price"
-                value={newPrice}
-                onChange={(e) => setNewPrice(e.target.value)}
-                className="w-full p-2 border rounded"
-              />
+            <div className="flex gap-2 justify-end">
+              <button onClick={resetAdjustments} disabled={!fProduct} className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-50">Reset Adjustments</button>
+              <button onClick={updateFactorAndAdjustments} disabled={!fProduct || newFactor === ""} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">Save Factor &amp; Adjustments</button>
             </div>
-          )}
+          </section>
+        )}
 
-          <button
-            onClick={handleShroudUpdate}
-            className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700"
-          >
-            Update Price
-          </button>
-        </div>
-      )}
+        {/* ================= Shrouds Tab ================= */}
+        {tab === "shrouds" && (
+          <section className="bg-white rounded-xl shadow p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Shroud Price Editor</h2>
+              <button onClick={loadShrouds} className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50" disabled={loadingShrouds}>
+                {loadingShrouds ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
 
-      {/* Chase placeholder */}
-      {tab === "chase" && (
-        <div className="w-full max-w-xl bg-white shadow rounded p-6 text-center">
-          <h2 className="text-xl font-semibold mb-4">Chase Cover Editor</h2>
-          <p>Coming soon...</p>
-        </div>
-      )}
+            {shroudErr && <div className="text-red-600 text-sm">{shroudErr}</div>}
 
-      {/* Announcements */}
-      {tab === "announce" && (
-        <div className="w-full max-w-xl bg-white shadow rounded p-6">
-          <h2 className="text-xl font-semibold mb-4">Manage Announcements</h2>
-          <ul className="mb-4">
-            {announcements.length === 0 && (
-              <li className="text-gray-500">No announcements found.</li>
-            )}
-            {announcements.map((ann) => (
-              <li
-                key={ann.id}
-                className="flex justify-between items-center bg-gray-100 p-2 rounded mb-2"
-              >
-                <span>{ann.text}</span>
-                <button
-                  onClick={() => handleDeleteAnnouncement(ann.id)}
-                  className="text-red-600 hover:text-red-800"
-                >
-                  Delete
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <select className="border rounded p-2" value={metal} onChange={(e) => { setMetal(e.target.value); setProduct(""); setSize(""); }}>
+                <option value="">Select Metal</option>
+                {metalsS.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+
+              <select className="border rounded p-2" value={product} onChange={(e) => { setProduct(e.target.value); setSize(""); }} disabled={!metal}>
+                <option value="">{metal ? "Select Product" : "Select metal first"}</option>
+                {productsS.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+
+              <select className="border rounded p-2" value={size} onChange={(e) => setSize(e.target.value)} disabled={!product}>
+                <option value="">{product ? "Select Size" : "Select product first"}</option>
+                {sizesS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="border rounded p-3 bg-gray-50">
+                <div className="text-sm text-gray-600">Current Price</div>
+                <div className="text-2xl font-semibold">{currentPrice !== null ? `$${Number(currentPrice).toFixed(2)}` : "—"}</div>
+              </div>
+
+              <div className="border rounded p-3">
+                <label className="block text-sm mb-1">New Price</label>
+                <input type="number" step="0.01" className="w-full border rounded p-2" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} disabled={!size} />
+                <button onClick={updateShroudPrice} disabled={!size || !newPrice} className="mt-2 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">
+                  Update Price
                 </button>
-              </li>
-            ))}
-          </ul>
-          <label className="block mb-2">New Announcement</label>
-          <textarea
-            value={newAnnouncement}
-            onChange={(e) => setNewAnnouncement(e.target.value)}
-            className="w-full p-2 border rounded mb-4"
-            rows={3}
-            placeholder="Enter announcement message"
-          />
-          <button
-            onClick={handleAddAnnouncement}
-            className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700"
-          >
-            Add Announcement
-          </button>
-        </div>
-      )}
+              </div>
+            </div>
+          </section>
+        )}
 
-      {/* ---------- Login Modal ---------- */}
+        {/* ================= Tiers Tab ================= */}
+        {tab === "tiers" && (
+          <section className="bg-white rounded-xl shadow p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Tier Pricing Factors</h2>
+              <button onClick={loadTiers} className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50" disabled={loadingTiers}>
+                {loadingTiers ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            {tiersErr && <div className="text-red-600 text-sm">{tiersErr}</div>}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <select className="border rounded p-2" value={tierKey} onChange={(e) => setTierKey(e.target.value)}>
+                <option value="">Select Tier</option>
+                {tiers && Object.keys(tiers).sort().map((k) => (<option key={k} value={k}>{k}</option>))}
+              </select>
+
+              <div className="border rounded p-2 bg-gray-50 flex items-center">
+                <div className="text-sm text-gray-600">Current:&nbsp;</div>
+                <div className="font-semibold">{tierCurrent ?? "—"}</div>
+              </div>
+
+              <div className="border rounded p-2">
+                <label className="block text-sm mb-1">New Factor</label>
+                <input type="number" step="0.01" className="w-full border rounded p-2" value={tierNew} onChange={(e) => setTierNew(e.target.value)} disabled={!tierKey} />
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button onClick={updateTier} disabled={!tierKey || tierNew === ""} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">
+                Save Tier
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* ================= Announcements Tab ================= */}
+        {tab === "announcements" && (
+          <section className="bg-white rounded-xl shadow p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold">Announcements</h2>
+              <button onClick={loadAnns} className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50" disabled={loadingAnns}>
+                {loadingAnns ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            <div className="mb-3">
+              <textarea rows={3} className="w-full border rounded p-2" placeholder="Type announcement…" value={newAnn} onChange={(e) => setNewAnn(e.target.value)} />
+              {addErr && <div className="text-red-600 text-sm mt-1">{addErr}</div>}
+              <div className="mt-2 flex justify-end">
+                <button onClick={addAnnouncement} disabled={adding} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">
+                  {adding ? "Posting…" : "Post Announcement"}
+                </button>
+              </div>
+            </div>
+
+            {annsErr ? (
+              <div className="text-red-600 text-sm">{annsErr}</div>
+            ) : anns.length ? (
+              <ul className="space-y-2">
+                {anns.map((a) => (
+                  <li key={a.id ?? a.text} className="bg-gray-50 border rounded p-2">
+                    <div className="text-sm">{a.text}</div>
+                    {a.createdAt && <div className="text-xs text-gray-500">{a.createdAt}</div>}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-sm text-gray-600">No announcements.</div>
+            )}
+          </section>
+        )}
+      </div>
+
+      {/* ======= Login Modal ======= */}
       {!currentUser && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
-          <form
-            onSubmit={signIn}
-            className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md"
-          >
+          <form onSubmit={signIn} className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md">
             <h2 className="text-xl font-semibold mb-4">Admin Sign In</h2>
 
             <input
@@ -783,17 +639,9 @@ function Admin() {
               </button>
             </div>
 
-            {loginError && (
-              <div className="text-red-600 text-sm mb-3">{loginError}</div>
-            )}
+            {loginError && <div className="text-red-600 text-sm mb-3">{loginError}</div>}
 
-            <button
-              type="submit"
-              disabled={isLoggingIn}
-              className={`w-full ${
-                isLoggingIn ? "bg-blue-400" : "bg-blue-600 hover:bg-blue-700"
-              } text-white p-2 rounded`}
-            >
+            <button type="submit" disabled={isLoggingIn} className={`w-full ${isLoggingIn ? "bg-blue-400" : "bg-blue-600 hover:bg-blue-700"} text-white p-2 rounded`}>
               {isLoggingIn ? "Signing in..." : "Sign in"}
             </button>
           </form>
@@ -803,4 +651,21 @@ function Admin() {
   );
 }
 
-export default Admin;
+/* ---------- tiny input helpers ---------- */
+function Field({ label, value, onChange }) {
+  return (
+    <label className="block">
+      <span className="block text-sm">{label}</span>
+      <input
+        type="number"
+        step="0.01"
+        className="w-full border rounded p-2"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+}
+function FieldTriple({ label, value, onChange }) {
+  return <Field label={label} value={value} onChange={onChange} />;
+}

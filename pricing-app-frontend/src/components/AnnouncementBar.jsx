@@ -1,5 +1,6 @@
+// src/components/AnnouncementBar.jsx
 import React, { useEffect, useState } from "react";
-import { ANNOUNCE_BASE } from "../config/api";
+import { API_BASE } from "../config/api";
 
 export default function AnnouncementBar() {
   const [items, setItems] = useState([]);
@@ -8,16 +9,10 @@ export default function AnnouncementBar() {
   async function load() {
     setError("");
     try {
-      const res = await fetch(`${ANNOUNCE_BASE}`);
+      const res = await fetch(`${API_BASE}/api/announcements`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-
-      const list = Array.isArray(data)
-        ? data
-        : data?.message
-        ? [{ id: 1, text: data.message }]
-        : [];
-
+      const list = Array.isArray(data) ? data : [];
       setItems(list);
     } catch {
       setError("Announcements unavailable");
@@ -32,7 +27,6 @@ export default function AnnouncementBar() {
   }, []);
 
   if (error || items.length === 0) return null;
-
   const latest = items[items.length - 1];
 
   return (

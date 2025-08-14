@@ -1,18 +1,63 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { productConfig, productAliases } from '../config/productConfig';
 
-// 🔧 Use env var if provided, else the current host (works on LAN, localhost, prod), fallback to old IP
-const API_BASE =
+// 🔧 API base: env or current host → normalize (remove trailing slashes and a trailing "/api")
+const RAW_BASE =
   (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_BASE) ||
   `${window.location.protocol}//${window.location.hostname}:3001` ||
   'http://192.168.0.73:3001';
+const API_BASE = String(RAW_BASE).replace(/\/+$/, '').replace(/\/api$/, '');
+
+// ----- Fraction helpers (support up to 1/16") -----
+const FRACTION_FIELDS = new Set(['length', 'width', 'skirt', 'length2', 'width2']); // includes unsquare pair
+
+function parseToSixteenth(val) {
+  if (val == null) return NaN;
+  if (typeof val === 'number') return Math.round(val * 16) / 16;
+  const s = String(val).trim();
+  if (s === '') return NaN;
+
+  // decimals
+  if (/^-?\d+(?:\.\d+)?$/.test(s)) {
+    const num = parseFloat(s);
+    return Math.round(num * 16) / 16;
+  }
+
+  // "X Y/Z" or "X-Y/Z" or "Y/Z"
+  const m = s.match(/^\s*(-?\d+)?\s*(?:[- ]\s*)?(?:(\d+)\s*\/\s*(\d+))\s*$/);
+  if (m) {
+    const whole = m[1] ? parseInt(m[1], 10) : 0;
+    const num = parseInt(m[2], 10);
+    const den = parseInt(m[3], 10);
+    if (!den || Number.isNaN(num)) return NaN;
+    const sign = whole < 0 ? -1 : 1;
+    const absWhole = Math.abs(whole);
+    const v = sign * (absWhole + num / den);
+    return Math.round(v * 16) / 16;
+  }
+
+  return NaN;
+}
+
+const roundToQuarter = (x) => Math.round(x * 4) / 4;
 
 function DynamicForm() {
   const [tier, setTier] = useState('');
   const [product, setProduct] = useState('');
   const [metalType, setMetalType] = useState('');
   const [price, setPrice] = useState(null);
-  const [formData, setFormData] = useState({ holes: 0, unsquare: false });
+
+  // keep raw strings so users can type fractions
+  const [formData, setFormData] = useState({
+    holes: '',          // blank -> placeholder shows "Hole Count"
+    unsquare: false,
+    length: '',
+    width: '',
+    skirt: '',
+    length2: '',        // extra fields shown when unsquare
+    width2: '',
+    holeSizes: [],      // reference only
+  });
 
   // 🔹 Live Announcement
   const [announcement, setAnnouncement] = useState('');
@@ -91,7 +136,24 @@ function DynamicForm() {
     { label: 'Copper', value: 'copper', backendValue: 'copper' },
   ];
 
+  // Identify product categories (robust multi-flue detection using backend aliases)
+  const lowerProduct = (product || '').toLowerCase();
+  const backendKey = (productAliases[product] || product || '').toLowerCase();
   const multiFlueProducts = ['ftomt', 'hipcor', 'hrtomt', 'hromt', 'htsmt', 'homt', 'hromss'];
+
+  const isChase = lowerProduct.includes('chase');
+const isMulti =
+  /(flat[_\s-]?top|hip|ridge)/.test(backendKey) ||  // use backendKey here
+  multiFlueProducts.includes(backendKey) ||
+  multiFlueProducts.includes(lowerProduct);
+  const shroudKeys = [
+    'dynasty', 'majesty', 'monaco', 'royale', 'durham',
+    'monarch', 'regal', 'princess', 'prince', 'temptress',
+    'imperial', 'centurion', 'mountaineer', 'emperor'
+  ];
+  const isShroud = shroudKeys.some(n => lowerProduct.includes(n));
+
+  const showUnsquareLayout = isChase || isMulti || isShroud;
 
   const filteredMetalOptions = useMemo(() => {
     if (!product) return metalOptions;
@@ -102,20 +164,46 @@ function DynamicForm() {
       shroud: ['ss24pol', 'black_galvanized', 'kynar'],
     };
 
-    const normalized = product.toLowerCase();
-    const allowed = normalized.includes('chase')
+    const allowed = isChase
       ? productRestrictions.chase_cover
-      : multiFlueProducts.includes(product)
+      : isMulti
       ? productRestrictions.multi
       : productRestrictions.shroud;
 
     return metalOptions.filter(opt => !opt.value || allowed.includes(opt.value));
-  }, [product]);
+  }, [product, isChase, isMulti]);
 
   const handleChange = (field, value) => {
-    const numericFields = ['length', 'width', 'skirt', 'holes'];
-    const parsedValue = numericFields.includes(field) ? (value === '' ? 0 : parseFloat(value) || 0) : value;
-    setFormData(prev => ({ ...prev, [field]: parsedValue }));
+    const lower = field.toLowerCase();
+
+    if (FRACTION_FIELDS.has(lower)) {
+      // keep raw string; parse later
+      setFormData(prev => ({ ...prev, [field]: value }));
+      return;
+    }
+
+    if (lower === 'holes') {
+      // Keep the raw typed value so the input can be blank with a placeholder
+      const count = Math.max(0, parseInt(value || 0, 10) || 0);
+      setFormData(prev => ({
+        ...prev,
+        holes: value,
+        holeSizes: Array.from({ length: count }, (_, i) => prev.holeSizes?.[i] || '')
+      }));
+      return;
+    }
+
+    if (lower === 'unsquare') {
+      const on = !!value;
+      setFormData(prev => ({
+        ...prev,
+        unsquare: on,
+        ...(on ? {} : { length2: '', width2: '' })
+      }));
+      return;
+    }
+
+    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   const mapTierToBackend = (t) => {
@@ -135,47 +223,81 @@ function DynamicForm() {
     const productDef = productConfig.products[product] || { fields: [] };
     const metalEntry = metalOptions.find(opt => opt.value === metalType);
     const metalTypeBackend = metalEntry?.backendValue || '';
+    if (!metalTypeBackend) return alert('Please select a metal type');
 
     const backendProduct = productAliases[product] || product;
 
+    // Parse/round fields
+    const parsed = {};
+    productDef.fields.forEach(field => {
+      const lower = field.toLowerCase();
+      const raw = formData[field];
+
+      if (FRACTION_FIELDS.has(lower)) {
+        let num = parseToSixteenth(raw);
+        if (lower === 'skirt' && Number.isFinite(num)) num = roundToQuarter(num); // round skirt to .25
+        parsed[field] = num;
+      } else {
+        const n = Number(raw);
+        parsed[field] = Number.isFinite(n) ? n : raw;
+      }
+    });
+
+    // If unsquare, take the longest L and W for pricing
+    let L1 = parseToSixteenth(formData.length);
+    let L2 = parseToSixteenth(formData.length2);
+    let W1 = parseToSixteenth(formData.width);
+    let W2 = parseToSixteenth(formData.width2);
+
+    if (!Number.isFinite(L1)) L1 = 0;
+    if (!Number.isFinite(W1)) W1 = 0;
+    if (!Number.isFinite(L2)) L2 = 0;
+    if (!Number.isFinite(W2)) W2 = 0;
+
+    const effectiveLength = formData.unsquare ? Math.max(L1, L2) : L1;
+    const effectiveWidth  = formData.unsquare ? Math.max(W1, W2) : W1;
+
+    const holesCount = Math.max(0, parseInt(formData.holes || 0, 10) || 0);
+
+    // build payload
     const payload = {
       tier: mapTierToBackend(tier),
       product: backendProduct,
+      metalType: metalTypeBackend,
       metal: metalTypeBackend,
-      metalType,
-      holes: parseFloat(formData.holes ?? 0),
+      metalKey: metalTypeBackend,
+      holes: holesCount,
       unsquare: !!formData.unsquare,
+
+      // send rounded/skirt-quantized fields
+      ...parsed,
+
+      // overwrite length/width with effective values
+      length: effectiveLength,
+      width: effectiveWidth,
     };
 
-    productDef.fields.forEach(field => {
-      const raw = formData[field];
-      const num = parseFloat(raw);
-      payload[field] = Number.isFinite(num) ? num : raw;
-    });
-
-    // 🔍 Debug so you can see exactly what’s being sent and where
-    console.log('[CALC] POST', `${API_BASE}/api/calculate`, payload);
+    const url = `${API_BASE}/api/calculate`;
+    console.log('[CALC] →', url, payload);
 
     try {
-      const response = await fetch(`${API_BASE}/api/calculate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      const ct = res.headers.get('content-type') || '';
+      const body = ct.includes('application/json') ? await res.json() : await res.text();
 
-      console.log('[CALC] Response status:', response.status);
+      console.log('[CALC] ←', res.status, body);
 
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        console.warn('[CALC] Non-OK response:', data);
+      if (!res.ok) {
+        alert(`Calc failed: HTTP ${res.status}\n${typeof body === 'string' ? body : JSON.stringify(body)}`);
         setPrice(null);
         return;
       }
 
-      const finalPrice = data.finalPrice || data.final_price || data.price;
+      const finalPrice = (body && (body.finalPrice ?? body.final_price ?? body.price));
       setPrice(typeof finalPrice === 'number' ? finalPrice : null);
     } catch (err) {
-      console.error('🚨 Fetch failed:', err);
+      console.error('[CALC] error', err);
+      alert(`Calc error: ${String(err)}`);
       setPrice(null);
     }
   };
@@ -187,9 +309,10 @@ function DynamicForm() {
       length: formData.length,
       width: formData.width,
       skirt: formData.skirt,
-      holes: formData.holes ?? 0,
+      holes: Math.max(0, parseInt(formData.holes || 0, 10) || 0),
       unsquare: !!formData.unsquare,
       final_price: price,
+      // holeSizes intentionally not sent (reference-only for next step)
     };
 
     try {
@@ -216,6 +339,10 @@ function DynamicForm() {
   const getFieldMeta = (fieldName) => {
     return productConfig.baseFields.find(f => f.name === fieldName) || { name: fieldName, type: 'text' };
   };
+
+  // fields present for the selected product
+  const productFields = (productConfig.products[product]?.fields || []).map(s => s.toLowerCase());
+  const hasSkirt = productFields.includes('skirt');
 
   return (
     <div className="relative min-h-screen bg-gray-100 flex items-center justify-center px-4 py-12">
@@ -259,7 +386,16 @@ function DynamicForm() {
           value={product}
           onChange={(e) => {
             setProduct(e.target.value);
-            setFormData({ holes: 0, unsquare: false });
+            setFormData({
+              holes: '',
+              unsquare: false,
+              length: '',
+              width: '',
+              skirt: '',
+              length2: '',
+              width2: '',
+              holeSizes: [],
+            });
           }}
           className="w-full p-2 border rounded"
         >
@@ -273,12 +409,10 @@ function DynamicForm() {
                 'monarch', 'regal', 'princess', 'prince', 'temptress',
                 'imperial', 'centurion', 'mountaineer',
               ];
-
-              const isShroud = shroudKeys.some(name => lowerKey.includes(name));
+              const isShroudHere = shroudKeys.some(name => lowerKey.includes(name));
               const isCorbel = lowerKey.includes('corbel');
-
               if (corbelAlwaysShowKeys.some(name => lowerKey.includes(name))) return true;
-              if (isShroud && isCorbel) return false;
+              if (isShroudHere && isCorbel) return false;
               return true;
             })
             .map(([key, value]) => (
@@ -300,45 +434,10 @@ function DynamicForm() {
 
         <div className="h-4" />
 
-        {(productConfig.products[product]?.fields || [])
-          .filter((field) => field && !['holes', 'holecount'].includes(field.toLowerCase()))
-          .map((field) => {
-            const { type, required } = getFieldMeta(field);
-            const label = field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-            const stepAttr =
-              field.toLowerCase() === 'skirt' ? 0.25 :
-              ['length', 'width'].includes(field.toLowerCase()) ? 0.5 :
-              undefined;
-
-            return (
-              <div key={field} className="w-full mb-4 flex justify-center">
-                <input
-                  type={type === 'number' ? 'number' : type}
-                  step={stepAttr}
-                  required={required}
-                  placeholder={label}
-                  value={formData[field] || ''}
-                  onChange={(e) => handleChange(field, e.target.value)}
-                  className="w-2/3 p-2 border rounded text-center"
-                />
-              </div>
-            );
-        })}
-
-        {product === 'chase_cover' && (
+        {/* ===== CHASE / MULTI / SHROUD share the same unsquare-first layout ===== */}
+        {showUnsquareLayout ? (
           <>
-            <div className="w-full mb-4 flex flex-col items-center">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                placeholder="Number of Holes (0 = None)"
-                value={formData.holes ?? 0}
-                onChange={(e) => handleChange('holes', e.target.value)}
-                className="w-2/3 p-2 border rounded text-center"
-              />
-            </div>
-
+            {/* Unsquare first */}
             <div className="w-full mb-4 flex flex-col items-center">
               <label className="flex items-center space-x-2">
                 <input
@@ -349,6 +448,153 @@ function DynamicForm() {
                 <span>Unsquare?</span>
               </label>
             </div>
+
+            {/* Length (1) and Width (2) */}
+            <div className="w-full mb-4 flex justify-center">
+              <input
+                type="text"
+                placeholder="Length (1)"
+                value={formData.length}
+                onChange={(e) => handleChange('length', e.target.value)}
+                className="w-2/3 p-2 border rounded text-center"
+              />
+            </div>
+            <div className="w-full mb-4 flex justify-center">
+              <input
+                type="text"
+                placeholder="Width (2)"
+                value={formData.width}
+                onChange={(e) => handleChange('width', e.target.value)}
+                className="w-2/3 p-2 border rounded text-center"
+              />
+            </div>
+
+            {/* Length (3) and Width (4) appear when Unsquare is checked */}
+            {formData.unsquare && (
+              <>
+                <div className="w-full mb-4 flex justify-center">
+                  <input
+                    type="text"
+                    placeholder="Length (3)"
+                    value={formData.length2}
+                    onChange={(e) => handleChange('length2', e.target.value)}
+                    className="w-2/3 p-2 border rounded text-center"
+                  />
+                </div>
+                <div className="w-full mb-4 flex justify-center">
+                  <input
+                    type="text"
+                    placeholder="Width (4)"
+                    value={formData.width2}
+                    onChange={(e) => handleChange('width2', e.target.value)}
+                    className="w-2/3 p-2 border rounded text-center"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Skirt next (only if that field exists for this product) */}
+            {hasSkirt && (
+              <div className="w-full mb-4 flex justify-center">
+                <input
+                  type="text"
+                  placeholder="Skirt"
+                  value={formData.skirt}
+                  onChange={(e) => handleChange('skirt', e.target.value)}
+                  className="w-2/3 p-2 border rounded text-center"
+                />
+              </div>
+            )}
+
+            {/* Hole controls ONLY for Chase Cover */}
+            {isChase && (
+              <>
+                <div className="w-full mb-4 flex flex-col items-center">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="Hole Count"
+                    value={formData.holes}
+                    onChange={(e) => handleChange('holes', e.target.value)}
+                    className="w-2/3 p-2 border rounded text-center"
+                  />
+                </div>
+
+                {Math.max(0, parseInt(formData.holes || 0, 10) || 0) > 0 && (
+                  <div className="w-full mb-4 flex flex-col items-center space-y-2">
+                    {Array.from({ length: Math.max(0, parseInt(formData.holes || 0, 10) || 0) }, (_, i) => (
+                      <input
+                        key={i}
+                        type="text"
+                        placeholder={`Hole ${i + 1} size (ref only)`}
+                        value={formData.holeSizes[i] || ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setFormData(prev => {
+                            const arr = [...(prev.holeSizes || [])];
+                            arr[i] = v;
+                            return { ...prev, holeSizes: arr };
+                          });
+                        }}
+                        className="w-2/3 p-2 border rounded text-center"
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Render remaining product fields (excluding ones we already handled) */}
+            {(productConfig.products[product]?.fields || [])
+              .filter((f) => {
+                const k = f.toLowerCase();
+                return !['length','width','skirt','holes','holecount'].includes(k);
+              })
+              .map((field) => {
+                const { type, required } = getFieldMeta(field);
+                const lower = field.toLowerCase();
+                const label = field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                const inputType = FRACTION_FIELDS.has(lower) ? 'text' : (type === 'number' ? 'number' : type);
+                return (
+                  <div key={field} className="w-full mb-4 flex justify-center">
+                    <input
+                      type={inputType}
+                      inputMode={FRACTION_FIELDS.has(lower) ? 'text' : undefined}
+                      placeholder={label}
+                      value={formData[field] ?? ''}
+                      onChange={(e) => handleChange(field, e.target.value)}
+                      className="w-2/3 p-2 border rounded text-center"
+                      required={required}
+                    />
+                  </div>
+                );
+              })}
+          </>
+        ) : (
+          // ===== OTHER PRODUCTS (not chase/multi/shroud): generic renderer =====
+          <>
+            {(productConfig.products[product]?.fields || [])
+              .filter((field) => field && !['holes', 'holecount'].includes(field.toLowerCase()))
+              .map((field) => {
+                const { type, required } = getFieldMeta(field);
+                const lower = field.toLowerCase();
+                const label = field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                const inputType = FRACTION_FIELDS.has(lower) ? 'text' : (type === 'number' ? 'number' : type);
+                return (
+                  <div key={field} className="w-full mb-4 flex justify-center">
+                    <input
+                      type={inputType}
+                      inputMode={FRACTION_FIELDS.has(lower) ? 'text' : undefined}
+                      placeholder={label}
+                      value={formData[field] ?? ''}
+                      onChange={(e) => handleChange(field, e.target.value)}
+                      className="w-2/3 p-2 border rounded text-center"
+                      required={required}
+                    />
+                  </div>
+                );
+              })}
           </>
         )}
 

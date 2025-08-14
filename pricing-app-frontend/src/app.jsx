@@ -1,8 +1,8 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import DynamicForm from './components/DynamicForm.jsx';
-import Admin from './components/Admin.jsx';
 import AnnouncementBar from './components/AnnouncementBar.jsx';
+import Admin from './components/Admin.jsx';
 
 function App() {
   return (
@@ -20,7 +20,7 @@ function App() {
         <Route
           path="/admin"
           element={
-            <main className="min-h-screen p-4 bg-gray-100 flex justify-center items-center">
+            <main className="min-h-screen p-4 bg-gray-100">
               <Admin />
             </main>
           }
