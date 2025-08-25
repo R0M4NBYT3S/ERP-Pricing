@@ -1,14 +1,21 @@
 // src/config/api.js
-const fromEnv = import.meta?.env?.VITE_API_BASE?.trim();
-const FALLBACK = `${window.location.protocol}//${window.location.hostname}:3001`;
+const env = import.meta?.env || {};
+const fromEnv = (env.VITE_API_BASE ?? env.VITE_API_URL ?? '').trim();
 
+// Fallback: same host as the frontend, port 3001 (works on LAN)
+const FALLBACK =
+  typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.hostname}:3001`
+    : 'http://localhost:3001';
+
+// Use env if it's a full URL, else fallback; normalize trailing slashes and /api
 const raw = fromEnv && /^https?:\/\//i.test(fromEnv) ? fromEnv : FALLBACK;
+const ORIGIN = raw.replace(/\/+$/, '').replace(/\/api$/,'');
 
-// Normalize: remove trailing slashes and a trailing "/api"
-const ORIGIN = raw.replace(/\/+$/,'').replace(/\/api$/,'');
-
-export const API_BASE = ORIGIN;            // e.g. http://localhost:3001
-export const API_ROOT = `${ORIGIN}/api`;   // e.g. http://localhost:3001/api
+export const API_BASE = ORIGIN;            // e.g. http://192.168.0.74:3001
+export const API_ROOT = `${ORIGIN}/api`;   // e.g. http://192.168.0.74:3001/api
+export const ADMIN_ROOT = `${API_ROOT}/admin`;
+export const TIERS_ENDPOINT = `${ADMIN_ROOT}/tiers`;
 
 export async function apiFetch(path, options = {}) {
   const url = path.startsWith('http')

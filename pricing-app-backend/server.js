@@ -1,161 +1,96 @@
-// server.js — minimal changes: ensure body parsers, and mount announcements & admin routes
+// server.js — mount routes/calculate and BLOCK legacy /api/chase
+
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 const express = require('express');
 const cors = require('cors');
-const morgan = require('morgan');
+
+const { createLogger } = require('./utils/logger');
 
 const app = express();
+const log = createLogger();
 
-// -------- Core middleware (keep these ABOVE routes) --------
+// -------- Core middleware --------
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(morgan('dev'));
-app.use(cors()); // dev: allow all
-app.use('/api/admin/tiers', require('./routes/adminTiers'));
-app.use('/api/admin', require('./routes/adminAuth'));
-app.use('/api/admin/shrouds', require('./routes/adminShrouds'));
+app.use(log.http());         // adds req.log + request IDs
+app.use(cors());             // open CORS in dev
 
+// ===== Block legacy chase route to prevent double-pricing =====
+app.use('/api/chase', (req, res) => {
+  console.warn(JSON.stringify({
+    ts: new Date().toISOString(),
+    level: 'warn',
+    msg: 'LEGACY_CHASE_ROUTE_CALLED',
+    method: req.method,
+    path: req.originalUrl
+  }, null, 2));
 
-// -------- Health check --------
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
-
-// ======== Calculator router you already have (unchanged) ========
-const router = express.Router();
-
-const { calculateChaseCover } = require('./pricing/calculateChaseCover');
-const { calculateMultiPrice } = require('./pricing/calculateMulti');
-const { calculateShroud } = require('./pricing/calculateShroud');
-const { normalizeMetalType } = require('./utils/normalizeMetal');
-const factorData = require('./config/multiFactors.json');
-
-let tierCfg = {};
-try { tierCfg = require('./config/tier_pricing_factors'); } catch { console.warn('⚠️ tier_pricing_factors not found; default 1.0'); }
-
-const TIER_ALIAS = {
-  elite: 'elite', value: 'val', 'value-gold': 'vg', 'value-silver': 'vs',
-  builder: 'bul', homeowner: 'ho', val: 'val', vg: 'vg', vs: 'vs', bul: 'bul', ho: 'ho'
-};
-function resolveTierAndFactor(tierInput) {
-  const raw = (tierInput || 'elite').toString().toLowerCase();
-  const short = TIER_ALIAS[raw] || raw;
-  const table = (tierCfg && typeof tierCfg === 'object')
-    ? (tierCfg.tiers && typeof tierCfg.tiers === 'object' ? tierCfg.tiers : tierCfg)
-    : {};
-  const tryKeys = [short, raw, 'elite'];
-  let factor = 1.0;
-  for (const k of tryKeys) { const v = table[k]; if (v != null && !Number.isNaN(+v)) { factor = +v; break; } }
-  return { tierKey: short, factor };
-}
-const shroudProducts = ['dynasty','princess','imperial','regal','majesty','monarch','monaco','royale','temptress','durham','centurion','prince','emperor'];
-
-router.post('/', (req, res) => {
-  try {
-    let { product, metalType, metal, tier } = req.body;
-    if (!product) return res.status(400).json({ error: 'Missing product' });
-
-    metalType = normalizeMetalType(metalType);
-    metal = normalizeMetalType(metal) || metalType;
-    const lowerProduct = product.toLowerCase();
-
-    const input = {
-      lengthVal: parseFloat(req.body.length) || 0,
-      widthVal: parseFloat(req.body.width) || 0,
-      screenVal: parseFloat(req.body.screenHeight || req.body.screen || 0),
-      overhangVal: parseFloat(req.body.lidOverhang || req.body.overhang || 0),
-      insetVal: parseFloat(req.body.inset) || 0,
-      skirtVal: parseFloat(req.body.skirt) || 0,
-      pitchVal: parseFloat(req.body.pitch) || 0,
-      holes: parseFloat(req.body.holes || 0),
-      unsquare: !!req.body.unsquare,
-      metalType, metal, product, tier
-    };
-
-    console.log('📦 Routing product:', lowerProduct);
-
-    let result;
-
-    if (lowerProduct.includes('chase_cover')) {
-      console.log('➡️ Routing to calculateChaseCover');
-      const { tierKey, factor: tierMul } = resolveTierAndFactor(tier);
-      result = calculateChaseCover(input, tierMul, tierKey);
-      console.log('💰 Calculated Chase Cover Price:', result);
-    } else if (
-      lowerProduct.includes('flat_top') ||
-      lowerProduct.includes('hip') ||
-      lowerProduct.includes('ridge')
-    ) {
-      console.log('➡️ Routing to calculateMultiPrice');
-      const factorRow = factorData.find(f =>
-        f.metal.toLowerCase() === metalType &&
-        f.product.toLowerCase() === lowerProduct &&
-        f.tier.toLowerCase() === 'elite'
-      );
-      if (!factorRow) {
-        console.warn(`⚠️ No factor found for ${product} (metal=${metalType})`);
-        return res.status(400).json({ error: `No factor found for ${product} (${metalType})` });
-      }
-      const baseFactor = factorRow.factor || 0;
-      const adjustments = factorRow.adjustments || {};
-      const { tierKey, factor: tierMul } = resolveTierAndFactor(tier);
-      result = calculateMultiPrice(input, adjustments, baseFactor, tierMul, tierKey);
-      console.log('💰 Calculated Multi-Flue Price:', result);
-    } else if (shroudProducts.some(name => lowerProduct.includes(name))) {
-      console.log('➡️ Routing to calculateShroud');
-      result = calculateShroud(input);
-      console.log('💰 Calculated Shroud Price:', result);
-    } else {
-      console.warn('⚠️ Unknown product type:', product);
-      return res.status(400).json({ error: 'Unknown product type', product });
-    }
-
-    if (result && typeof result.finalPrice === 'number') {
-      let fp = result.finalPrice;
-      if (input.unsquare) {
-        if (['black_galvanized','kynar'].includes(input.metalType)) fp += 60; else fp += 85;
-      }
-      if (input.holes > 1) {
-        const extra = input.holes - 1;
-        fp += extra * (['black_galvanized','kynar'].includes(input.metalType) ? 25 : 45);
-      }
-      result.finalPrice = parseFloat(fp.toFixed(2));
-    }
-
-    return res.json(result);
-
-  } catch (err) {
-    console.error('🔥 Error in /api/calculate:', err);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
+  return res.status(410).json({
+    error: 'Legacy chase route removed. Use POST /api/calculate with product="chase_cover".'
+  });
 });
 
-// Mount calculator
-app.use('/api/calculate', router);
+// -------- Routers --------
+app.use('/api/admin/tiers',   require('./routes/adminTiers'));
+app.use('/api/admin',         require('./routes/adminAuth'));
+app.use('/api/admin/shrouds', require('./routes/adminShrouds'));
+app.use('/api/shrouds',       require('./routes/shroudRoutes'));
 
-// ======== Admin (read-only data) ========
-const adminRoutes = require('./routes/adminRoutes');
-app.use('/api/admin', adminRoutes);
+// ✅ Unified calculator (Chase Cover + Multi + Shroud)
+app.use('/api/calculate',     require('./routes/calculate'));
 
-// ======== Announcements mounts (keep your existing router if present) ========
+// ======== Optional: Announcements mounts ========
 try {
   const announcementsRouter = require('./routes/announcements');
-
-  // main paths
   app.use('/api/announcements', announcementsRouter);
-  app.use('/api/announcement', announcementsRouter);
-
-  // admin-scoped paths
+  app.use('/api/announcement',  announcementsRouter);
   app.use('/api/admin/announcements', announcementsRouter);
-  app.use('/api/admin/announcement', announcementsRouter);
-
-  console.log('✅ Mounted announcements at /api/(admin/){announcement,announcements}');
+  app.use('/api/admin/announcement',  announcementsRouter);
+  log.info('announcements_mounted');
 } catch (e) {
-  console.warn('ℹ️ routes/announcements.js not found');
+  log.info('announcements_router_missing', { error: e.message });
 }
 
-// ======== Startup ========
+// --- Admin Factors (read-only) ---
+function loadCfg(relPath, fallback) {
+  try {
+    const abs = require.resolve(relPath);
+    delete require.cache[abs];
+    return require(relPath);
+  } catch (e) {
+    log.warn('cfg_load_failed', { file: relPath, err: e.message });
+    return fallback;
+  }
+}
+
+app.get('/api/admin/factors', (req, res) => {
+  const multi = loadCfg('./config/multiFactors.json', []);
+  const grouped = {};
+  for (const row of Array.isArray(multi) ? multi : []) {
+    const metal = String(row?.metal ?? '').toLowerCase();
+    const product = String(row?.product ?? '').toLowerCase();
+    if (!metal || !product) continue;
+    if (!grouped[metal]) grouped[metal] = {};
+    grouped[metal][product] = {
+      factor: (typeof row?.factor === 'number') ? +row.factor : row?.factor ?? null,
+      adjustments: row?.adjustments ?? {}
+    };
+  }
+  return res.json(grouped);
+});
+
+// -------- Centralized error handler --------
+app.use((err, req, res, next) => {
+  req.log?.error('unhandled_error', { err: err?.stack || String(err) });
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// ---------- Boot ----------
 const PORT = process.env.PORT || 3001;
-const HOST = '0.0.0.0';
+const HOST = process.env.HOST || '0.0.0.0';
 
 app.listen(PORT, HOST, () => {
-  console.log(`🚀 API running at http://localhost:${PORT}`);
+  log.info('server_start', { port: PORT, host: HOST });
 });

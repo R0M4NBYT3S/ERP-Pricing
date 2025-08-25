@@ -62,7 +62,7 @@ router.get('/factors', (_req, res) => {
           factor: Number(row.factor || 0),
           adjustments: row.adjustments || {
             screen: { standard: 0, interval: 0, rate: 0 },
-            overhang: { standard: 0, interval: 0, rate: 0 },
+            overhang: { standard: 5, interval: 1, rate: 0 },
             inset: { standard: 0, interval: 0, rate: 0 },
             skirt: { standard: 0, interval: 0, rate: 0 },
             pitch: { below: 0, above: 0 }

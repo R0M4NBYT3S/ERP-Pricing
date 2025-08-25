@@ -1,151 +1,128 @@
-// Multi-Flue Pricing Engine with full logging and safe guards
-// Drop-in replacement for ../pricing/calculateMulti.js
-// Exports: { calculateMultiPrice(payload, adjustments, baseFactor, tierMultiplier, tier) }
+// pricing/calculateMulti.js
+// Multi-flue price calculator
+// Formula: finalPrice = (L + W) * ((baseFactor + adjustments) * tierMultiplier)
 
-function toNum(x, def = 0) {
-  const n = Number(x);
-  return Number.isFinite(n) ? n : def;
+function num(v, dflt = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : dflt;
 }
 
-function safeSteps(diff, interval) {
-  const d = Math.abs(toNum(diff, 0));
-  const i = toNum(interval, 0);
+function ceilSteps(diff, interval) {
+  const i = num(interval, 0);
   if (!(i > 0)) return 0;
-  return Math.floor(d / i);
+  return Math.ceil(Math.max(0, num(diff, 0)) / i);
 }
 
-function calculateMultiPrice(payload, adjustments = {}, baseFactor = 0, tierMultiplier = 1, tier = 'elite') {
-  // normalize inputs
-  const lengthVal   = toNum(payload?.lengthVal, 0);
-  const widthVal    = toNum(payload?.widthVal, 0);
-  const screenVal   = toNum(payload?.screenVal, 0);
-  const overhangVal = toNum(payload?.overhangVal, 0);
-  const insetVal    = toNum(payload?.insetVal, 0);
-  const skirtVal    = toNum(payload?.skirtVal, 0);
-  const pitchVal    = toNum(payload?.pitchVal, 0);
+function floorSteps(diff, interval) {
+  const i = num(interval, 0);
+  if (!(i > 0)) return 0;
+  return Math.floor(Math.max(0, num(diff, 0)) / i);
+}
 
-  const product = String(payload?.product || '');
-  const metal   = String(payload?.metal || payload?.metalType || '');
-  const isCorbel = /corbel/i.test(product);
+/**
+ * @param {Object} input
+ *   lengthVal, widthVal, screenVal, overhangVal, insetVal, skirtVal, pitchVal, product (string) ...
+ * @param {Object} adjustments table, e.g. {
+ *   screen: { standard, interval, rate },
+ *   overhang: { standard, interval, rate },
+ *   inset: { standard, interval, rate },
+ *   skirt: { standard, interval, rate },
+ *   pitch: { below, above }
+ * }
+ * @param {number} baseFactor      → product/type base factor
+ * @param {number} tierMultiplier  → tier factor (val/vg/vs/etc.)
+ * @param {string} tierKey         → tier name (for debug only)
+ */
+function calculateMultiPrice(input = {}, adjustments = {}, baseFactor = 0, tierMultiplier = 1, tierKey = 'elite') {
+  const L = num(input.lengthVal);
+  const W = num(input.widthVal);
+  const perimeter = L + W;
 
-  const adj = adjustments || {};
-  let adjustedFactor = toNum(baseFactor, 0);
-  const adjustmentLog = [];
+  // Screen (ceil above standard)
+  const scrStd  = num(adjustments?.screen?.standard, 0);
+  const scrInt  = num(adjustments?.screen?.interval, 0);
+  const scrRate = num(adjustments?.screen?.rate, 0);
+  const screenSteps = ceilSteps(num(input.screenVal) - scrStd, scrInt);
+  const screenAdjBase = screenSteps * scrRate;
 
-  // For transparency, log the adjustments object once
-  try {
-    console.log('🧩 Adjustments Object:', JSON.stringify(adj, null, 2));
-  } catch {}
+  // New rule: screen <= 8 gets -0.19 (additive to base screen calc)
+  const screenLowAdj = num(input.screenVal) <= 8 ? -0.19 : 0;
 
-  // ---- INSET ---- (skip for corbel or invalid interval/rate)
-  if (!isCorbel && adj.inset && adj.inset.interval > 0 && toNum(adj.inset.rate, 0) !== 0) {
-    const diff  = insetVal - toNum(adj.inset.standard, 0);
-    if (diff !== 0) {
-      const steps = safeSteps(diff, adj.inset.interval);
-      const add   = steps * toNum(adj.inset.rate, 0) * (diff > 0 ? 1 : -1);
-      adjustedFactor += add;
-      adjustmentLog.push(`inset: ${add >= 0 ? '+' : ''}${add.toFixed(2)}`);
-    } else {
-      adjustmentLog.push('inset: 0');
-    }
-  } else {
-    if (!isCorbel) adjustmentLog.push('inset: 0 (skipped)');
-  }
+  // Overhang (ceil 1" steps ABOVE standard; never subtract). Default standard 5".
+  const ovStd  = num(adjustments?.overhang?.standard, 5);
+  const ovInt  = num(adjustments?.overhang?.interval, 1);
+  const ovRate = num(adjustments?.overhang?.rate, 0);
+  const ovDiff = Math.max(0, num(input.overhangVal) - ovStd);
+  const overhangSteps = ovDiff > 0 ? Math.ceil(ovDiff / ovInt) : 0;
+  const overhangAdj = overhangSteps * ovRate;
 
-  // ---- SCREEN ----
-  if (adj.screen && adj.screen.interval > 0 && toNum(adj.screen.rate, 0) !== 0) {
-    const diff  = screenVal - toNum(adj.screen.standard, 0);
-    if (diff !== 0) {
-      const steps = safeSteps(diff, adj.screen.interval);
-      const add   = steps * toNum(adj.screen.rate, 0) * (diff > 0 ? 1 : -1);
-      adjustedFactor += add;
-      adjustmentLog.push(`screen: ${add >= 0 ? '+' : ''}${add.toFixed(2)}`);
-    } else {
-      adjustmentLog.push('screen: 0');
-    }
-  } else {
-    adjustmentLog.push('screen: 0 (skipped)');
-  }
+  // Inset (floor steps)
+  const inStd  = num(adjustments?.inset?.standard, 0);
+  const inInt  = num(adjustments?.inset?.interval, 0);
+  const inRate = num(adjustments?.inset?.rate, 0);
+  const insetSteps = floorSteps(num(input.insetVal) - inStd, inInt);
+  const insetAdj = insetSteps * inRate;
 
-  // ---- OVERHANG ----
-  if (adj.overhang && adj.overhang.interval > 0 && toNum(adj.overhang.rate, 0) !== 0) {
-    const diff  = overhangVal - toNum(adj.overhang.standard, 0);
-    if (diff !== 0) {
-      const steps = safeSteps(diff, adj.overhang.interval);
-      const add   = steps * toNum(adj.overhang.rate, 0) * (diff > 0 ? 1 : -1);
-      adjustedFactor += add;
-      adjustmentLog.push(`overhang: ${add >= 0 ? '+' : ''}${add.toFixed(2)}`);
-    } else {
-      adjustmentLog.push('overhang: 0');
-    }
-  } else {
-    adjustmentLog.push('overhang: 0 (skipped)');
-  }
+  // Skirt (floor steps)
+  const skStd  = num(adjustments?.skirt?.standard, 0);
+  const skInt  = num(adjustments?.skirt?.interval, 0);
+  const skRate = num(adjustments?.skirt?.rate, 0);
+  const skirtSteps = floorSteps(num(input.skirtVal) - skStd, skInt);
+  const skirtAdj = skirtSteps * skRate;
 
-  // ---- SKIRT ---- (skip for corbel per your rule)
-  if (!isCorbel && adj.skirt && adj.skirt.interval > 0 && toNum(adj.skirt.rate, 0) !== 0) {
-    const diff  = skirtVal - toNum(adj.skirt.standard, 0);
-    if (diff !== 0) {
-      const steps = safeSteps(diff, adj.skirt.interval);
-      const add   = steps * toNum(adj.skirt.rate, 0) * (diff > 0 ? 1 : -1);
-      adjustedFactor += add;
-      adjustmentLog.push(`skirt: ${add >= 0 ? '+' : ''}${add.toFixed(2)}`);
-    } else {
-      adjustmentLog.push('skirt: 0');
-    }
-  } else if (!isCorbel) {
-    adjustmentLog.push('skirt: 0 (skipped)');
-  }
+  // Pitch: <=5 add "below" once; 6-9 add 0; >=10 add floor(p-9) * "above"
+  const p = num(input.pitchVal);
+  const pBelow = num(adjustments?.pitch?.below, 0);
+  const pAbove = num(adjustments?.pitch?.above, 0);
+  let pitchAdj = 0;
+  if (p <= 5) pitchAdj += pBelow;
+  else if (p >= 10) pitchAdj += Math.floor(p - 9) * pAbove;
 
-  // ---- CORBEL EXTRA ----
-  if (isCorbel) {
-    const sumCOS = insetVal + overhangVal + skirtVal;
-    if (sumCOS > 9) {
-      adjustedFactor += 0.15;
-      adjustmentLog.push('corbel(>9): +0.15');
-    } else {
-      adjustmentLog.push('corbel(<=9): +0');
-    }
-  }
+  // Corbel bonus: +0.15 if inset+overhang+skirt > 9 and product contains 'corbel'
+  const isCorbel = typeof input.product === 'string' && input.product.toLowerCase().includes('corbel');
+  const sumCOS = num(input.insetVal) + num(input.overhangVal) + num(input.skirtVal);
+  const corbelAdj = isCorbel && sumCOS > 9 ? 0.15 : 0;
 
-  // ---- PITCH ----
-  // Flat rule: if pitchVal < 12 => below; if > 12 => above; exactly 12 => 0
-  if (adj.pitch && (toNum(adj.pitch.below, 0) || toNum(adj.pitch.above, 0))) {
-    let add = 0;
-    if (pitchVal < 12) add = toNum(adj.pitch.below, 0);
-    else if (pitchVal > 12) add = toNum(adj.pitch.above, 0);
-    adjustedFactor += add;
-    adjustmentLog.push(`pitch: ${add >= 0 ? '+' : ''}${add.toFixed(2)}`);
-  } else {
-    adjustmentLog.push('pitch: +0');
-  }
+  // Totals
+  const totalAdjustment =
+    screenAdjBase + screenLowAdj + overhangAdj + insetAdj + skirtAdj + pitchAdj + corbelAdj;
 
-  // Guard final numeric values
-  if (!Number.isFinite(adjustedFactor)) adjustedFactor = 0;
+  const adjustedFactor = baseFactor + totalAdjustment;
+  const tieredFactor = adjustedFactor * num(tierMultiplier, 1);
+  const finalPrice = Number.isFinite(perimeter * tieredFactor)
+    ? +(perimeter * tieredFactor).toFixed(2)
+    : 0;
 
-  // Tier application
-  const tm = toNum(tierMultiplier, 1);
-  const tieredFactor = adjustedFactor * (Number.isFinite(tm) && tm > 0 ? tm : 1);
-
-  // Price formula for multi: (L + W) * tieredFactor
-  const price = (lengthVal + widthVal) * tieredFactor;
-
-  // Emit a compact log line mirroring your format
-  try {
-    console.log(`🔧 Adjustments Applied: ${adjustmentLog.join(', ')} [sum=${(insetVal + overhangVal + skirtVal)}]`);
-    console.log(`💡 Base: ${toNum(baseFactor,0)}, Adjusted: ${Number.isFinite(adjustedFactor) ? adjustedFactor.toFixed(2) : 'NaN'}, Tiered: ${Number.isFinite(tieredFactor) ? tieredFactor.toFixed(4) : 'NaN'}, Price: ${Number.isFinite(price) ? price.toFixed(2) : 'NaN'}`);
-  } catch {}
-
+  // Return details for logging/debug
   return {
-    ...payload,
-    metal,
-    product,
-    baseFactor: toNum(baseFactor, 0),
-    adjustedFactor: Number.isFinite(adjustedFactor) ? +adjustedFactor.toFixed(2) : NaN,
-    tierMultiplier: tm,
-    tieredFactor: Number.isFinite(tieredFactor) ? +tieredFactor.toFixed(4) : NaN,
-    tier,
-    finalPrice: Number.isFinite(price) ? +price.toFixed(2) : NaN,
+    product: input.product || '',
+    tier: tierKey,
+    baseFactor: +baseFactor.toFixed(4),
+    adjustedFactor: +adjustedFactor.toFixed(4),
+    tierMultiplier: +num(tierMultiplier, 1).toFixed(4),
+    tieredFactor: +tieredFactor.toFixed(4),
+    perimeter: +perimeter.toFixed(2),
+    finalPrice,
+    debug: {
+      inputs: {
+        length: L, width: W,
+        screen: num(input.screenVal),
+        overhang: num(input.overhangVal),
+        inset: num(input.insetVal),
+        skirt: num(input.skirtVal),
+        pitch: num(input.pitchVal)
+      },
+      adjustments: {
+        screen_base: +screenAdjBase.toFixed(4),
+        screen_low8: +screenLowAdj.toFixed(4),
+        overhang: +overhangAdj.toFixed(4),
+        inset: +insetAdj.toFixed(4),
+        skirt: +skirtAdj.toFixed(4),
+        pitch: +pitchAdj.toFixed(4),
+        corbel: +corbelAdj.toFixed(4),
+        total: +totalAdjustment.toFixed(4)
+      }
+    }
   };
 }
 

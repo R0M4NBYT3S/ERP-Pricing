@@ -1,14 +1,13 @@
 // pricing/calculateChaseCover.js
-// Applies tier multiplier from caller (master tier file), then add-ons.
+// Use tier-specific grid pricing only. No multipliers applied here.
 
 const chaseCoverMatrix = require('../config/chaseCoverMatrix');
 
 /**
  * @param {object} input - measurement + options
- * @param {number} tierMul - multiplier from master tier file (e.g., elite=1.0, vg=1.11969)
- * @param {string} tierKey - normalized tier key (elite, vg, vs, val, bul, ho)
+ * @param {string} tierKey - normalized tier key (elite, value, gold, silver, builder, homeowner)
  */
-function calculateChaseCover(input, tierMul = 1.0, tierKey = 'elite') {
+function calculateChaseCover(input, tierKey = 'elite') {
   const {
     lengthVal,
     widthVal,
@@ -25,15 +24,16 @@ function calculateChaseCover(input, tierMul = 1.0, tierKey = 'elite') {
   const H = Number(holes);
   const metalKey = (metalType || '').toLowerCase();
 
-  console.log('📩 Calculating Chase Cover:', { L, W, S, metalKey, U, H, tierMul, tierKey });
+  console.log('📩 Calculating Chase Cover:', { L, W, S, metalKey, U, H, tierKey });
 
-  // 🔹 Validate
   if (!L || !W || !metalKey || Number.isNaN(S)) {
     return { error: 'Missing or invalid required fields for chase cover calculation' };
   }
 
-  // 🔹 Find size category + base price from matrix
-  const metalData = chaseCoverMatrix[metalKey];
+  const tierSlice = chaseCoverMatrix[tierKey];
+  if (!tierSlice) return { error: `Unsupported tier: ${tierKey}` };
+
+  const metalData = tierSlice[metalKey];
   if (!metalData) return { error: `Unsupported metal: ${metalKey}` };
 
   let sizeCategory = null;
@@ -55,10 +55,7 @@ function calculateChaseCover(input, tierMul = 1.0, tierKey = 'elite') {
     return { error: 'No valid size category' };
   }
 
-  console.log(`✅ Matched Size Category: ${sizeCategory} | Base Price (elite): ${basePrice}`);
-
-  // 🔹 Apply tier multiplier to the base matrix price
-  const adjustedBase = +(basePrice * (Number(tierMul) || 1)).toFixed(2);
+  console.log(`✅ Matched Size Category: ${sizeCategory} | Base Price (${tierKey}): ${basePrice}`);
 
   // ---------------------------
   // 🔹 Add-ons (Unsquare & Holes)
@@ -66,40 +63,27 @@ function calculateChaseCover(input, tierMul = 1.0, tierKey = 'elite') {
   let addOns = 0;
   const addOnBreakdown = [];
 
-  // Unsquare surcharge
   if (U) {
     const surcharge = (metalKey.includes('black') || metalKey.includes('kynar')) ? 60 : 85;
     addOns += surcharge;
     addOnBreakdown.push({ type: 'unsquare', amount: surcharge });
-    console.log(`➕ Unsquare Surcharge Applied: ${surcharge}`);
-  } else {
-    console.log('ℹ️ No Unsquare Surcharge Applied');
   }
 
-  // Hole surcharge (only holes over 1)
   if (H > 1) {
     const extra = H - 1;
     const perHole = (metalKey.includes('black') || metalKey.includes('kynar')) ? 25 : 45;
     const amt = extra * perHole;
     addOns += amt;
     addOnBreakdown.push({ type: 'extra_holes', count: extra, perHole, amount: amt });
-    console.log(`➕ Hole Surcharge Applied: ${extra} extra holes × ${perHole} = ${amt}`);
-  } else {
-    console.log(`ℹ️ Hole Surcharge Not Applied (holes=${H})`);
   }
 
-  // ---------------------------
-  // 🔹 Final Price
-  // ---------------------------
-  const finalPrice = parseFloat((adjustedBase + addOns).toFixed(2));
+  const finalPrice = parseFloat((basePrice + addOns).toFixed(2));
 
   return {
     metal: metalKey,
-    sizeCategory,
-    base_price: basePrice,        // elite/base matrix price
     tier: tierKey,
-    tier_multiplier: Number(tierMul) || 1,
-    adjusted_base: adjustedBase,  // base × tier
+    sizeCategory,
+    base_price: basePrice,
     add_ons: addOns,
     add_on_breakdown: addOnBreakdown,
     final_price: finalPrice,
