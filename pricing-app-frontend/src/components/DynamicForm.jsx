@@ -23,7 +23,7 @@ function parseToSixteenth(val) {
     return Math.round(num * 16) / 16;
   }
 
-  // "X Y/Z" or "X-Y/Z" or "Y/Z"
+ // "X Y/Z" or "X-Y/Z" or "Y/Z"
   const m = s.match(/^\s*(-?\d+)?\s*(?:[- ]\s*)?(?:(\d+)\s*\/\s*(\d+))\s*$/);
   if (m) {
     const whole = m[1] ? parseInt(m[1], 10) : 0;
@@ -37,6 +37,20 @@ function parseToSixteenth(val) {
   }
 
   return NaN;
+} // <-- closes parseToSixteenth properly
+
+// ===== IMAGE HELPERS (top-level) =====
+const IMG_ROOT = '/products';
+const FALLBACK_IMAGE = `${IMG_ROOT}/placeholder.png`;
+
+function imageCandidatesForProduct(key) {
+  if (!key) return [];
+  const slug = String(key).trim().toLowerCase();
+  return [
+    `${IMG_ROOT}/${slug}.jpg`,
+    `${IMG_ROOT}/${slug}.jpeg`,
+    `${IMG_ROOT}/${slug}.png`,
+  ];
 }
 
 const roundToQuarter = (x) => Math.round(x * 4) / 4;
@@ -49,15 +63,41 @@ function DynamicForm() {
 
   // keep raw strings so users can type fractions
   const [formData, setFormData] = useState({
-    holes: '',          // blank -> placeholder shows "Hole Count"
+    holes: '',
     unsquare: false,
     length: '',
     width: '',
     skirt: '',
-    length2: '',        // extra fields shown when unsquare
+    length2: '',
     width2: '',
-    holeSizes: [],      // reference only
+    holeSizes: [],
   });
+
+// ---- image candidates (.jpg → .jpeg → .png) ----
+const [imgIdx, setImgIdx] = useState(0);
+
+const candidates = useMemo(() => {
+  // compute keys without touching backendKey yet
+  const fromAlias = (productAliases[product] || product || '').toLowerCase();
+  const fromRaw   = (product || '').toLowerCase();
+
+  // try both possible slugs (alias and raw) across common extensions
+  const uniqSlugs = Array.from(new Set([fromAlias, fromRaw].filter(Boolean)));
+  const exts = ['jpg', 'jpeg', 'png', 'JPG', 'JPEG', 'PNG'];
+
+  const out = [];
+  for (const slug of uniqSlugs) {
+    for (const ext of exts) out.push(`${IMG_ROOT}/${slug}.${ext}`);
+  }
+  return out;
+}, [product]);
+
+const imgSrc = candidates[imgIdx] || null;
+
+useEffect(() => {
+  setImgIdx(0); // reset when product changes
+}, [product]);
+
 
   // 🔹 Live Announcement
   const [announcement, setAnnouncement] = useState('');
@@ -139,25 +179,27 @@ function DynamicForm() {
   // Identify product categories (robust multi-flue detection using backend aliases)
   const lowerProduct = (product || '').toLowerCase();
   const backendKey = (productAliases[product] || product || '').toLowerCase();
-  const multiFlueProducts = ['ftomt', 'hipcor', 'hrtomt', 'hromt', 'htsmt', 'homt', 'hromss'];
+  // Identify product categories (robust multi-flue detection using backend aliases)
+const multiFlueProducts = ['ftomt', 'hipcor', 'hrtomt', 'hromt', 'htsmt', 'homt', 'hromss'];
 
-  const isChase = lowerProduct.includes('chase');
-  const isMulti =
-    /(flat[_\s-]?top|hip|ridge)/.test(backendKey) ||  // use backendKey here
-    multiFlueProducts.includes(backendKey) ||
-    multiFlueProducts.includes(lowerProduct);
+const isChase = lowerProduct.includes('chase');
+const isMulti =
+  /(flat[_\s-]?top|hip|ridge)/.test(backendKey) ||
+  multiFlueProducts.includes(backendKey) ||
+  multiFlueProducts.includes(lowerProduct);
 
-  // NEW: detect hip / hip-and-ridge for pitch handling
-  const isHipProduct = /hip/.test(backendKey);
+// NEW: detect hip / hip-and-ridge for pitch handling
+const isHipProduct = /hip/.test(backendKey);
 
-  const shroudKeys = [
-    'dynasty', 'majesty', 'monaco', 'royale', 'durham',
-    'monarch', 'regal', 'princess', 'prince', 'temptress',
-    'imperial', 'centurion', 'mountaineer', 'emperor'
-  ];
-  const isShroud = shroudKeys.some(n => lowerProduct.includes(n));
+const shroudKeys = [
+  'dynasty', 'majesty', 'monaco', 'royale', 'durham',
+  'monarch', 'regal', 'princess', 'prince', 'temptress',
+  'imperial', 'centurion', 'mountaineer', 'emperor'
+];
+const isShroud = shroudKeys.some(n => lowerProduct.includes(n));
 
-  const showUnsquareLayout = isChase || isMulti || isShroud;
+const showUnsquareLayout = isChase || isMulti || isShroud;
+
 
   const filteredMetalOptions = useMemo(() => {
     if (!product) return metalOptions;
@@ -427,7 +469,34 @@ function DynamicForm() {
             .map(([key, value]) => (
               <option key={key} value={key}>{value.label}</option>
             ))}
-        </select>
+
+         </select>
+
+{product && (
+  <div className="mt-4 mb-6 border rounded bg-gray-50 p-2">
+    <div className="text-xs text-gray-500 mb-2">Preview: {product}</div>
+    <div className="w-full max-w-sm aspect-[4/3] overflow-hidden flex items-center justify-center">
+      {imgSrc && (
+        <img
+          src={imgSrc || FALLBACK_IMAGE}
+          alt={`${backendKey || 'product'} preview`}
+          loading="lazy"
+          decoding="async"
+          onError={(e) => {
+            if (imgIdx + 1 < candidates.length) {
+              setImgIdx(imgIdx + 1); // try .jpeg then .png
+            } else if (e.currentTarget.src !== window.location.origin + FALLBACK_IMAGE) {
+              e.currentTarget.src = FALLBACK_IMAGE; // final fallback
+            }
+          }}
+          className="object-contain w-full h-full"
+        />
+      )}
+    </div>
+  </div>
+)}
+
+
 
         <div className="h-4" />
 

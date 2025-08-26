@@ -16,6 +16,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(log.http());         // adds req.log + request IDs
 app.use(cors());             // open CORS in dev
+app.use('/api', require('./routes/cutsheetShroud'));
+
+app.post('/api/_test', (req, res) => res.json({ ok: true, where: 'server.js' }));
+
+
 
 // ===== Block legacy chase route to prevent double-pricing =====
 app.use('/api/chase', (req, res) => {
