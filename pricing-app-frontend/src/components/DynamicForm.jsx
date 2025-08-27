@@ -510,204 +510,381 @@ const showUnsquareLayout = isChase || isMulti || isShroud;
           ))}
         </select>
 
-        <div className="h-4" />
+ 
 
-        {/* ===== CHASE / MULTI / SHROUD share the same unsquare-first layout ===== */}
-        {showUnsquareLayout ? (
-          <>
-            {/* Unsquare first */}
-            <div className="w-full mb-4 flex flex-col items-center">
-              <label className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={formData.unsquare || false}
-                  onChange={(e) => handleChange('unsquare', e.target.checked)}
-                />
-                <span>Unsquare?</span>
-              </label>
-            </div>
 
-            {/* Length (1) and Width (2) */}
-            <div className="w-full mb-4 flex justify-center">
-              <input
-                type="text"
-                placeholder="Length (1)"
-                value={formData.length}
-                onChange={(e) => handleChange('length', e.target.value)}
-                className="w-2/3 p-2 border rounded text-center"
-              />
-            </div>
-            <div className="w-full mb-4 flex justify-center">
-              <input
-                type="text"
-                placeholder="Width (2)"
-                value={formData.width}
-                onChange={(e) => handleChange('width', e.target.value)}
-                className="w-2/3 p-2 border rounded text-center"
-              />
-            </div>
 
-            {/* Length (3) and Width (4) appear when Unsquare is checked */}
-            {formData.unsquare && (
-              <>
-                <div className="w-full mb-4 flex justify-center">
-                  <input
-                    type="text"
-                    placeholder="Length (3)"
-                    value={formData.length2}
-                    onChange={(e) => handleChange('length2', e.target.value)}
-                    className="w-2/3 p-2 border rounded text-center"
-                  />
-                </div>
-                <div className="w-full mb-4 flex justify-center">
-                  <input
-                    type="text"
-                    placeholder="Width (4)"
-                    value={formData.width2}
-                    onChange={(e) => handleChange('width2', e.target.value)}
-                    className="w-2/3 p-2 border rounded text-center"
-                  />
-                </div>
-              </>
-            )}
-
-            {/* Skirt next (only if that field exists for this product) */}
-            {hasSkirt && (
-              <div className="w-full mb-4 flex justify-center">
-                <input
-                  type="text"
-                  placeholder="Skirt"
-                  value={formData.skirt}
-                  onChange={(e) => handleChange('skirt', e.target.value)}
-                  className="w-2/3 p-2 border rounded text-center"
-                />
-              </div>
-            )}
-
-            {/* Hole controls ONLY for Chase Cover */}
-            {isChase && (
-              <>
-                <div className="w-full mb-4 flex flex-col items-center">
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    placeholder="Hole Count"
-                    value={formData.holes}
-                    onChange={(e) => handleChange('holes', e.target.value)}
-                    className="w-2/3 p-2 border rounded text-center"
-                  />
-                </div>
-
-                {Math.max(0, parseInt(formData.holes || 0, 10) || 0) > 0 && (
-                  <div className="w-full mb-4 flex flex-col items-center space-y-2">
-                    {Array.from({ length: Math.max(0, parseInt(formData.holes || 0, 10) || 0) }, (_, i) => (
-                      <input
-                        key={i}
-                        type="text"
-                        placeholder={`Hole ${i + 1} size (ref only)`}
-                        value={formData.holeSizes[i] || ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setFormData(prev => {
-                            const arr = [...(prev.holeSizes || [])];
-                            arr[i] = v;
-                            return { ...prev, holeSizes: arr };
-                          });
-                        }}
-                        className="w-2/3 p-2 border rounded text-center"
-                      />
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Render remaining product fields (excluding ones we already handled).
-                Also exclude 'pitch' unless this is a hip product. */}
-            {(productConfig.products[product]?.fields || [])
-              .filter((f) => {
-                const k = f.toLowerCase();
-                if (['length','width','skirt','holes','holecount'].includes(k)) return false;
-                if (k === 'pitch' && !isHipProduct) return false; // HIDE pitch when not hip
-                return true;
-              })
-              .map((field) => {
-                const { type, required } = getFieldMeta(field);
-                const lower = field.toLowerCase();
-                const label = field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                const inputType = FRACTION_FIELDS.has(lower) ? 'text' : (type === 'number' ? 'number' : type);
-                return (
-                  <div key={field} className="w-full mb-4 flex justify-center">
-                    <input
-                      type={inputType}
-                      inputMode={FRACTION_FIELDS.has(lower) ? 'text' : undefined}
-                      placeholder={label}
-                      value={formData[field] ?? ''}
-                      onChange={(e) => handleChange(field, e.target.value)}
-                      className="w-2/3 p-2 border rounded text-center"
-                      required={required}
-                    />
-                  </div>
-                );
-              })}
-          </>
-        ) : (
-          // ===== OTHER PRODUCTS (not chase/multi/shroud): generic renderer =====
-          <>
-            {(productConfig.products[product]?.fields || [])
-              .filter((field) => {
-                const k = field && field.toLowerCase();
-                if (!k) return false;
-                if (['holes','holecount'].includes(k)) return false;
-                if (k === 'pitch' && !isHipProduct) return false; // HIDE pitch when not hip
-                return true;
-              })
-              .map((field) => {
-                const { type, required } = getFieldMeta(field);
-                const lower = field.toLowerCase();
-                const label = field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                const inputType = FRACTION_FIELDS.has(lower) ? 'text' : (type === 'number' ? 'number' : type);
-                return (
-                  <div key={field} className="w-full mb-4 flex justify-center">
-                    <input
-                      type={inputType}
-                      inputMode={FRACTION_FIELDS.has(lower) ? 'text' : undefined}
-                      placeholder={label}
-                      value={formData[field] ?? ''}
-                      onChange={(e) => handleChange(field, e.target.value)}
-                      className="w-2/3 p-2 border rounded text-center"
-                      required={required}
-                    />
-                  </div>
-                );
-              })}
-          </>
-        )}
-
-        <div className="w-full flex justify-center mt-2 space-x-2">
-          <button
-            onClick={calculatePrice}
-            className="w-1/2 bg-blue-600 text-white p-2 rounded hover:bg-blue-700 text-center"
-          >
-            Calculate
-          </button>
-
-          <button
-            onClick={generateCutSheet}
-            className="w-1/2 bg-green-600 text-white p-2 rounded hover:bg-green-700 text-center"
-            disabled={price === null}
-          >
-            Generate Cut Sheet
-          </button>
-        </div>
-
-        <div className="text-center font-semibold text-lg mt-4">
-          Price: ${price !== null ? price.toFixed(2) : '0.00'}
+{/* ── Universal toggles: Unsquare + Powdercoat ───────── */}
+{product && (
+  <div className="mt-2 mb-3 flex flex-wrap items-center gap-6">
+    {/* Unsquare with tooltip */}
+    <div className="relative inline-flex items-center gap-2 text-sm font-normal group">
+      <label className="inline-flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={!!formData.unsquare}
+          onChange={(e) => setFormData((f) => ({ ...f, unsquare: e.target.checked }))}
+        />
+        <span>Unsquare?</span>
+      </label>
+      <div className="absolute left-0 top-full mt-2 z-50 hidden group-hover:block">
+        <div className="pointer-events-none rounded-lg border bg-white shadow-xl p-2 w-64">
+          <img src="/help/unsquare.png" alt="Unsquare illustration" className="w-full h-auto rounded" />
+          <p className="mt-1 text-xs text-gray-600">Unsquare illustration</p>
         </div>
       </div>
     </div>
+
+    {/* Powdercoat (stainless only) */}
+    {(['ss24pol', 'ss24mil'].includes(metalType)) && (
+      <label className="inline-flex items-center gap-2 text-sm font-normal">
+        <input
+          type="checkbox"
+          checked={!!formData.powdercoat}
+          onChange={(e) => setFormData((f) => ({ ...f, powdercoat: e.target.checked }))}
+        />
+        <span>Powdercoat</span>
+      </label>
+    )}
+  </div>
+)}
+
+{/* ── Hole placement toggles: Center/Offset/Offset Multi (CHASE only) ───────── */}
+{product && isChase && (
+  <>
+    {/*
+      Radio-like behavior + image tooltips on hover.
+      Clicking the active one again clears all selections.
+    */}
+    {(() => {
+      const setHolePlacement = (key) => {
+        setFormData((f) => ({
+          ...f,
+          centerHole: key === 'center',
+          offsetHole: key === 'offset',
+          offsetMultiHole: key === 'multi',
+        }));
+      };
+
+      const Tooltip = ({ src, alt, children }) => (
+        <div className="relative inline-flex items-center gap-2 text-sm font-normal group">
+          {children}
+          <div className="absolute left-0 top-full mt-2 z-50 hidden group-hover:block">
+            <div className="pointer-events-none rounded-lg border bg-white shadow-xl p-2 w-64">
+              <img src={src} alt={alt} className="w-full h-auto rounded" />
+              <p className="mt-1 text-xs text-gray-600">{alt}</p>
+            </div>
+          </div>
+        </div>
+      );
+
+      return (
+        <div className="mt-2 mb-3 flex flex-wrap items-center gap-6">
+          {/* Center hole (radio-like) + tooltip */}
+          <Tooltip src="/help/center-hole.png" alt="Center hole illustration">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!!formData.centerHole}
+                onChange={(e) => setHolePlacement(e.target.checked ? 'center' : null)}
+              />
+              <span>Center hole</span>
+            </label>
+          </Tooltip>
+
+          {/* Offset hole (radio-like) + tooltip */}
+          <Tooltip src="/help/offset-single-hole.png" alt="Offset (single) hole illustration">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!!formData.offsetHole}
+                onChange={(e) => setHolePlacement(e.target.checked ? 'offset' : null)}
+              />
+              <span>Offset hole</span>
+            </label>
+          </Tooltip>
+
+          {/* Offset multi hole (radio-like) + tooltip */}
+          <Tooltip src="/help/offset-multi-hole.png" alt="Offset multi-hole illustration">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!!formData.offsetMultiHole}
+                onChange={(e) => setHolePlacement(e.target.checked ? 'multi' : null)}
+              />
+              <span>Offset multi hole</span>
+            </label>
+          </Tooltip>
+        </div>
+      );
+    })()}
+  </>
+)}
+
+{/* Length (1) and Width (2) — only when a product is selected and it uses base dims */}
+{(() => {
+  const fields = productConfig.products[product]?.fields || [];
+  const needsBaseDims =
+    isChase ||
+    fields.some((f) => ['length', 'width'].includes((f || '').toLowerCase()));
+
+  if (!product || !needsBaseDims) return null;
+
+  return (
+    <>
+      <div className="w-full mb-4 flex justify-center">
+        <input
+          type="text"
+          placeholder="Length (1)"
+          value={formData.length ?? ''}
+          onChange={(e) => handleChange('length', e.target.value)}
+          className="w-2/3 p-2 border rounded text-center"
+        />
+      </div>
+      <div className="w-full mb-4 flex justify-center">
+        <input
+          type="text"
+          placeholder="Width (2)"
+          value={formData.width ?? ''}
+          onChange={(e) => handleChange('width', e.target.value)}
+          className="w-2/3 p-2 border rounded text-center"
+        />
+      </div>
+    </>
   );
+})()}
+
+{/* Length (3) and Width (4) appear when Unsquare is checked */}
+{formData.unsquare && (
+  <>
+    <div className="w-full mb-4 flex justify-center">
+      <input
+        type="text"
+        placeholder="Length (3)"
+        value={formData.length2}
+        onChange={(e) => handleChange('length2', e.target.value)}
+        className="w-2/3 p-2 border rounded text-center"
+      />
+    </div>
+    <div className="w-full mb-4 flex justify-center">
+      <input
+        type="text"
+        placeholder="Width (4)"
+        value={formData.width2}
+        onChange={(e) => handleChange('width2', e.target.value)}
+        className="w-2/3 p-2 border rounded text-center"
+      />
+    </div>
+  </>
+)}
+
+{/* Skirt (only if that field exists for this product) */}
+{hasSkirt && (
+  <div className="w-full mb-4 flex justify-center">
+    <input
+      type="text"
+      placeholder="Skirt"
+      value={formData.skirt}
+      onChange={(e) => handleChange('skirt', e.target.value)}
+      className="w-2/3 p-2 border rounded text-center"
+    />
+  </div>
+)}
+
+{/* Hole controls ONLY for the standalone Chase Cover product screen */}
+{isChase && (
+  <>
+    {(() => {
+      const holeCount = Math.max(0, parseInt(formData.holes || 0, 10) || 0);
+      const multiMode = !!formData.offsetMultiHole || holeCount > 1;
+      const showOffsets = !!formData.offsetHole || multiMode;
+      const centerSingle = holeCount === 1 && !formData.offsetHole && !formData.offsetMultiHole;
+
+      return (
+        <>
+          {/* Hole count + adaptive A/B offset inputs */}
+          <div className="w-full mb-4 flex flex-col items-center">
+            <div className="w-2/3 flex items-center gap-3">
+              {/* Hole Count — shrinks to 1/4 width when offsets apply */}
+              <input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="Hole Count"
+                value={formData.holes}
+                onChange={(e) => {
+                  const count = Math.max(0, parseInt(e.target.value || 0, 10) || 0);
+                  setFormData((prev) => {
+                    const resize = (arr = [], len) =>
+                      Array.from({ length: len }, (_, i) => arr[i] ?? '');
+                    return {
+                      ...prev,
+                      holes: e.target.value, // keep raw so user can clear
+                      holeSizes: resize(prev.holeSizes, count),
+                      offsetAList: resize(prev.offsetAList, count),
+                      offsetBList: resize(prev.offsetBList, count),
+                    };
+                  });
+                }}
+                className={`${showOffsets ? 'w-1/4' : 'w-full'} p-2 border rounded text-center`}
+              />
+
+              {/* Offsets UI */}
+              {showOffsets && (
+                <>
+                  {!multiMode ? (
+                    // Single offset: just A and B
+                    <div className="flex-1 flex items-center gap-3">
+                      <div className="flex items-center gap-2 flex-1">
+                        <label className="text-sm shrink-0">A:</label>
+                        <input
+                          type="text"
+                          placeholder="A"
+                          value={formData.offsetA ?? ''}
+                          onChange={(e) =>
+                            setFormData((f) => ({ ...f, offsetA: e.target.value }))
+                          }
+                          className="w-full p-2 border rounded text-center"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 flex-1">
+                        <label className="text-sm shrink-0">B:</label>
+                        <input
+                          type="text"
+                          placeholder="B"
+                          value={formData.offsetB ?? ''}
+                          onChange={(e) =>
+                            setFormData((f) => ({ ...f, offsetB: e.target.value }))
+                          }
+                          className="w-full p-2 border rounded text-center"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    // Multi offset: A1..An, B1..Bn
+                    <div className="flex-1">
+                      <div className="grid grid-cols-2 gap-2">
+                        {Array.from({ length: holeCount }, (_, i) => (
+                          <React.Fragment key={i}>
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm shrink-0">{`A${i + 1}:`}</label>
+                              <input
+                                type="text"
+                                placeholder={`A${i + 1}`}
+                                value={formData.offsetAList?.[i] ?? ''}
+                                onChange={(e) =>
+                                  setFormData((prev) => {
+                                    const next = [...(prev.offsetAList || [])];
+                                    next[i] = e.target.value;
+                                    return { ...prev, offsetAList: next };
+                                  })
+                                }
+                                className="w-full p-2 border rounded text-center"
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm shrink-0">{`B${i + 1}:`}</label>
+                              <input
+                                type="text"
+                                placeholder={`B${i + 1}`}
+                                value={formData.offsetBList?.[i] ?? ''}
+                                onChange={(e) =>
+                                  setFormData((prev) => {
+                                    const next = [...(prev.offsetBList || [])];
+                                    next[i] = e.target.value;
+                                    return { ...prev, offsetBList: next };
+                                  })
+                                }
+                                className="w-full p-2 border rounded text-center"
+                              />
+                            </div>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Per-hole reference sizes – ONLY for a single, center hole */}
+          {centerSingle && (
+            <div className="w-full mb-4 flex flex-col items-center space-y-2">
+              <input
+                type="text"
+                placeholder="Hole 1 size (ref only)"
+                value={formData.holeSizes?.[0] || ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setFormData((prev) => {
+                    const arr = [...(prev.holeSizes || [])];
+                    arr[0] = v;
+                    return { ...prev, holeSizes: arr };
+                  });
+                }}
+                className="w-2/3 p-2 border rounded text-center"
+              />
+            </div>
+          )}
+        </>
+      );
+    })()}
+  </>
+)}
+{/* Render remaining product fields (excluding ones we already handled).
+    Also exclude 'pitch' unless this is a hip product. */}
+{(productConfig.products[product]?.fields || [])
+  .filter((field) => {
+    const k = field?.toLowerCase?.() || '';
+    if (!k) return false;
+    if (['length', 'width', 'skirt', 'holes', 'holecount'].includes(k)) return false;
+    if (k === 'pitch' && !isHipProduct) return false;
+    return true;
+  })
+  .map((field) => {
+    const { type, required } = getFieldMeta(field);
+    const lower = field.toLowerCase();
+    const label = field.replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase());
+    const inputType = FRACTION_FIELDS.has(lower) ? 'text' : (type === 'number' ? 'number' : type);
+    return (
+      <div key={field} className="w-full mb-4 flex justify-center">
+        <input
+          type={inputType}
+          inputMode={FRACTION_FIELDS.has(lower) ? 'text' : undefined}
+          placeholder={label}
+          value={formData[field] ?? ''}
+          onChange={(e) => handleChange(field, e.target.value)}
+          className="w-2/3 p-2 border rounded text-center"
+          required={required}
+        />
+      </div>
+    );
+  })}
+
+<div className="w-full flex justify-center mt-2 space-x-2">
+  <button
+    onClick={calculatePrice}
+    className="w-1/2 bg-blue-600 text-white p-2 rounded hover:bg-blue-700 text-center"
+  >
+    Calculate
+  </button>
+
+  <button
+    onClick={generateCutSheet}
+    className="w-1/2 bg-green-600 text-white p-2 rounded hover:bg-green-700 text-center"
+    disabled={price === null}
+  >
+    Generate Cut Sheet
+  </button>
+</div>
+
+<div className="text-center font-semibold text-lg mt-4">
+  Price: ${price !== null ? price.toFixed(2) : '0.00'}
+</div>
+</div>
+</div>
+);
 }
 
 export default DynamicForm;
