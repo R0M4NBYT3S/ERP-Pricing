@@ -16,11 +16,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(log.http());         // adds req.log + request IDs
 app.use(cors());             // open CORS in dev
+
+// Mount any non-admin API first
 app.use('/api', require('./routes/cutsheetShroud'));
 
 app.post('/api/_test', (req, res) => res.json({ ok: true, where: 'server.js' }));
-
-
 
 // ===== Block legacy chase route to prevent double-pricing =====
 app.use('/api/chase', (req, res) => {
@@ -38,10 +38,15 @@ app.use('/api/chase', (req, res) => {
 });
 
 // -------- Routers --------
+
+// ✅ Mount admin *feature* routers BEFORE adminAuth so POST /api/admin/factors is reachable
 app.use('/api/admin/tiers',   require('./routes/adminTiers'));
-app.use('/api/admin',         require('./routes/adminAuth'));
+app.use('/api/admin/chase',   require('./routes/adminChase'));
+app.use('/api/admin',         require('./routes/adminroutes'));
 app.use('/api/admin/shrouds', require('./routes/adminShrouds'));
-app.use('/api/shrouds',       require('./routes/shroudRoutes'));
+
+// Admin auth after feature routers (its routes should be specific and not catch-all)
+app.use('/api/admin',         require('./routes/adminAuth'));
 
 // ✅ Unified calculator (Chase Cover + Multi + Shroud)
 app.use('/api/calculate',     require('./routes/calculate'));
@@ -57,34 +62,6 @@ try {
 } catch (e) {
   log.info('announcements_router_missing', { error: e.message });
 }
-
-// --- Admin Factors (read-only) ---
-function loadCfg(relPath, fallback) {
-  try {
-    const abs = require.resolve(relPath);
-    delete require.cache[abs];
-    return require(relPath);
-  } catch (e) {
-    log.warn('cfg_load_failed', { file: relPath, err: e.message });
-    return fallback;
-  }
-}
-
-app.get('/api/admin/factors', (req, res) => {
-  const multi = loadCfg('./config/multiFactors.json', []);
-  const grouped = {};
-  for (const row of Array.isArray(multi) ? multi : []) {
-    const metal = String(row?.metal ?? '').toLowerCase();
-    const product = String(row?.product ?? '').toLowerCase();
-    if (!metal || !product) continue;
-    if (!grouped[metal]) grouped[metal] = {};
-    grouped[metal][product] = {
-      factor: (typeof row?.factor === 'number') ? +row.factor : row?.factor ?? null,
-      adjustments: row?.adjustments ?? {}
-    };
-  }
-  return res.json(grouped);
-});
 
 // -------- Centralized error handler --------
 app.use((err, req, res, next) => {

@@ -1,4 +1,8 @@
-import React, { useEffect, useState } from "react";
+/* Full replacement of src/components/admin.jsx
+   Adds a new "Chase" tab that edits tiered grid prices and add-on values.
+   Existing tabs (Factors, Shrouds, Tiers, Announcements) are untouched.
+*/
+import React, { useEffect, useMemo, useState } from "react";
 
 // ---- API roots ----
 const API_ROOT   = `${window.location.protocol}//${window.location.hostname}:3001/api`;
@@ -21,21 +25,21 @@ function sizeRootForProduct(prodNode) {
 }
 
 async function getJSON(url) {
-  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  const res = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
   const ct = res.headers.get("content-type") || "";
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
   if (!ct.includes("application/json")) throw new Error(`Expected JSON, got ${ct || "unknown"}`);
   return res.json();
 }
 
-// ⬅️ add corbel default (others unchanged)
+// default adjustments
 const DEFAULT_ADJUSTMENTS = {
   screen:   { standard: 0, interval: 0, rate: 0 },
   overhang: { standard: 0, interval: 0, rate: 0 },
   inset:    { standard: 0, interval: 0, rate: 0 },
   skirt:    { standard: 0, interval: 0, rate: 0 },
   pitch:    { below: 0, above: 0 },
-  corbel:   0.15, // add-to-factor when corbel sum > 9 (for corbel SKUs)
+  corbel:   0.15,
 };
 
 export default function Admin() {
@@ -82,7 +86,7 @@ export default function Admin() {
     setLoginPassword("");
   };
 
-  // ================= FACTORS (read + update factor & adjustments) =================
+  // ================= FACTORS =================
   const [factorsRaw, setFactorsRaw] = useState(null);
   const [loadingFactors, setLoadingFactors] = useState(false);
   const [factorsErr, setFactorsErr] = useState("");
@@ -95,38 +99,82 @@ export default function Admin() {
 
   const loadFactors = async () => {
     setLoadingFactors(true); setFactorsErr("");
-    try { setFactorsRaw((await getJSON(`${ADMIN_ROOT}/factors`)) || {}); }
-    catch (e) { setFactorsErr(e.message || String(e)); setFactorsRaw(null); }
-    finally { setLoadingFactors(false); }
+    try {
+      const url = `${ADMIN_ROOT}/factors?t=${Date.now()}`;
+      const data = await getJSON(url);
+      setFactorsRaw(data || {});
+    } catch (e) {
+      setFactorsErr(e.message || String(e));
+      setFactorsRaw(null);
+    } finally {
+      setLoadingFactors(false);
+    }
   };
 
-  const factors = (() => {
+  const factors = useMemo(() => {
     const raw = factorsRaw;
     if (!raw || typeof raw !== "object") return {};
-    const looksMetal = Object.values(raw).some(v => v && typeof v === "object" && !("factor" in v));
-    if (looksMetal) return raw;
-    if (Object.values(raw).every(v => v && typeof v === "object" && ("factor" in v || "adjustments" in v))) {
+    const looksMetal = Object.values(raw).some(
+      (v) => v && typeof v === "object" && !("factor" in v || "adjustments" in v)
+    );
+    if (looksMetal) {
+      const out = {};
+      for (const [metalKey, prodMap] of Object.entries(raw)) {
+        const m = {};
+        for (const [prodKey, entry] of Object.entries(prodMap || {})) {
+          if (typeof entry === "number") {
+            m[prodKey] = { factor: entry, adjustments: {} };
+          } else if (entry && typeof entry === "object") {
+            const f = typeof entry.factor === "number" ? entry.factor :
+                      (Number.isFinite(+entry) ? +entry : null);
+            m[prodKey] = { factor: f, adjustments: entry.adjustments || {} };
+          } else {
+            m[prodKey] = { factor: null, adjustments: {} };
+          }
+        }
+        out[metalKey] = m;
+      }
+      return out;
+    }
+    if (Object.values(raw).every(
+      (v) => v && typeof v === "object" && ("factor" in v || "adjustments" in v)
+    )) {
       return { default: raw };
     }
+    if (Object.values(raw).every((v) => typeof v === "number")) {
+      const m = {};
+      for (const [prodKey, num] of Object.entries(raw)) {
+        m[prodKey] = { factor: num, adjustments: {} };
+      }
+      return { default: m };
+    }
     return raw;
-  })();
+  }, [factorsRaw]);
 
-  const metals = Object.keys(factors || {});
-  const products = fMetal ? Object.keys(factors[fMetal] || {}) : [];
+  const metals = useMemo(() => Object.keys(factors || {}), [factors]);
+  const products = useMemo(
+    () => (fMetal ? Object.keys(factors?.[fMetal] || {}) : []),
+    [fMetal, factors]
+  );
 
   useEffect(() => {
     if (fMetal && fProduct) {
-      const entry = factors?.[fMetal]?.[fProduct] || {};
-      const fac = entry?.factor;
+      const rawEntry = factors?.[fMetal]?.[fProduct];
+      let fac = null;
+      let a = {};
+      if (typeof rawEntry === "number") {
+        fac = rawEntry;
+      } else if (rawEntry && typeof rawEntry === "object") {
+        fac = rawEntry.factor;
+        a = rawEntry.adjustments || {};
+      }
       setCurrentFactor(Number.isFinite(fac) ? fac : null);
       setNewFactor(Number.isFinite(fac) ? String(fac) : "");
-      const a = entry?.adjustments || {};
       const isCorbel = /corbel/i.test(fProduct);
       setAdj({
         screen:   { ...DEFAULT_ADJUSTMENTS.screen,   ...(a.screen   || {}) },
         overhang: { ...DEFAULT_ADJUSTMENTS.overhang, ...(a.overhang || {}) },
         inset:    { ...DEFAULT_ADJUSTMENTS.inset,    ...(a.inset    || {}) },
-        // hide/ignore skirt for corbel SKUs (still stored, but not shown)
         skirt:    { ...DEFAULT_ADJUSTMENTS.skirt,    ...(a.skirt    || {}) },
         pitch:    { ...DEFAULT_ADJUSTMENTS.pitch,    ...(a.pitch    || {}) },
         corbel:   Number.isFinite(a.corbel) ? a.corbel : (isCorbel ? DEFAULT_ADJUSTMENTS.corbel : 0),
@@ -138,35 +186,57 @@ export default function Admin() {
     }
   }, [fMetal, fProduct, factors]);
 
+  const setAdjField = (group, key, val) => setAdj(prev => ({ ...prev, [group]: { ...prev[group], [key]: val } }));
+  const setAdjScalar = (key, val) => setAdj(prev => ({ ...prev, [key]: val }));
+
+  const sanitizeAdj = (a) => {
+    const num = (v, d = 0) => {
+      const n = typeof v === "string" ? parseFloat(v) : Number(v);
+      return Number.isFinite(n) ? n : d;
+    };
+    return {
+      screen:   { standard: num(a.screen?.standard),   interval: num(a.screen?.interval),   rate: num(a.screen?.rate) },
+      overhang: { standard: num(a.overhang?.standard), interval: num(a.overhang?.interval), rate: num(a.overhang?.rate) },
+      inset:    { standard: num(a.inset?.standard),    interval: num(a.inset?.interval),    rate: num(a.inset?.rate) },
+      skirt:    { standard: num(a.skirt?.standard),    interval: num(a.skirt?.interval),    rate: num(a.skirt?.rate) },
+      pitch:    { below:    num(a.pitch?.below),       above:    num(a.pitch?.above) },
+      corbel:   num(a.corbel, 0),
+    };
+  };
+
   const updateFactorAndAdjustments = async () => {
     if (!currentUser) return alert("Sign in first.");
     if (!fMetal || !fProduct) return alert("Select metal and product.");
+
     const value = parseFloat(newFactor);
     if (!Number.isFinite(value)) return alert("Enter a valid factor.");
-    const payload = { metal: fMetal, product: fProduct, factor: value, adjustments: adj };
+
+    const payload = {
+      metal: fMetal,
+      product: fProduct,
+      factor: value,
+      value,
+      adjustments: sanitizeAdj(adj),
+    };
+
     const res = await fetch(`${ADMIN_ROOT}/factors`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json", ...authHeaders },
       body: JSON.stringify(payload),
     });
+
+    const ct = res.headers.get("content-type") || "";
+    const body = ct.includes("application/json") ? await res.json().catch(() => null) : await res.text().catch(() => null);
     if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      throw new Error(t || "Failed to update factor/adjustments");
+      const msg = typeof body === "string" && body ? body : (body?.message || `HTTP ${res.status}`);
+      throw new Error(`Factor update failed: ${msg}`);
     }
     await loadFactors();
   };
 
-  const setAdjField = (group, key, val) => {
-    const num = parseFloat(val);
-    setAdj(prev => ({ ...prev, [group]: { ...prev[group], [key]: Number.isFinite(num) ? num : 0 } }));
-  };
-  const setAdjScalar = (key, val) => {
-    const num = parseFloat(val);
-    setAdj(prev => ({ ...prev, [key]: Number.isFinite(num) ? num : 0 }));
-  };
   const resetAdjustments = () => setAdj(structuredClone(DEFAULT_ADJUSTMENTS));
 
-  // ================= SHROUDS (read + update) =================
+  // ================= SHROUDS =================
   const [shroudData, setShroudData] = useState({});
   const [loadingShrouds, setLoadingShrouds] = useState(false);
   const [shroudErr, setShroudErr] = useState("");
@@ -179,7 +249,7 @@ export default function Admin() {
 
   const loadShrouds = async () => {
     setLoadingShrouds(true); setShroudErr("");
-    try { setShroudData((await getJSON(`${ADMIN_ROOT}/shrouds`)) || {}); }
+    try { setShroudData((await getJSON(`${ADMIN_ROOT}/shrouds?t=${Date.now()}`)) || {}); }
     catch (e) { setShroudErr(e.message || String(e)); setShroudData({}); }
     finally { setLoadingShrouds(false); }
   };
@@ -226,7 +296,89 @@ export default function Admin() {
   const sizesMap = metal && product ? sizeRootForProduct(productsMap[product]) : {};
   const sizesS = Object.keys(sizesMap || {});
 
-  // ================= ANNOUNCEMENTS (list + create) =================
+  // ================= CHASE (new) =================
+  const [chase, setChase] = useState({ prices: {}, addons: { hole: { black_kynar: 25, stainless: 45 }, unsquare: { black_kynar: 60, stainless: 85 } } });
+  const [loadingChase, setLoadingChase] = useState(false);
+  const [chaseErr, setChaseErr] = useState("");
+
+  const [cTier, setCTier] = useState("");
+  const [cMetal, setCMetal] = useState("");
+  const [cSize, setCSize] = useState("");
+  const [cCurrent, setCCurrent] = useState(null);
+  const [cNew, setCNew] = useState("");
+
+  const [addonHBK, setAddonHBK] = useState("25"); // holes black/kynar
+  const [addonHSS, setAddonHSS] = useState("45"); // holes stainless
+  const [addonUBK, setAddonUBK] = useState("60"); // unsquare black/kynar
+  const [addonUSS, setAddonUSS] = useState("85"); // unsquare stainless
+
+  const loadChase = async () => {
+    setLoadingChase(true); setChaseErr("");
+    try {
+      const data = await getJSON(`${ADMIN_ROOT}/chase?t=${Date.now()}`);
+      setChase(data || { prices: {}, addons: {} });
+      const a = data?.addons || {};
+      setAddonHBK(String(a?.hole?.black_kynar ?? 25));
+      setAddonHSS(String(a?.hole?.stainless   ?? 45));
+      setAddonUBK(String(a?.unsquare?.black_kynar ?? 60));
+      setAddonUSS(String(a?.unsquare?.stainless   ?? 85));
+    } catch (e) {
+      setChaseErr(e.message || String(e));
+      setChase({ prices: {}, addons: {} });
+    } finally {
+      setLoadingChase(false);
+    }
+  };
+
+  const chaseTiers   = Object.keys(chase.prices || {});
+  const chaseMetals  = cTier ? Object.keys(chase.prices[cTier] || {}) : [];
+  const chaseSizes   = (cTier && cMetal) ? Object.keys(chase.prices[cTier][cMetal] || {}) : [];
+
+  useEffect(() => {
+    if (cTier && cMetal && cSize) {
+      const v = Number(chase?.prices?.[cTier]?.[cMetal]?.[cSize]);
+      setCCurrent(Number.isFinite(v) ? v : null);
+      setCNew(Number.isFinite(v) ? String(v) : "");
+    } else {
+      setCCurrent(null);
+      setCNew("");
+    }
+  }, [cTier, cMetal, cSize, chase]);
+
+  const updateChasePrice = async () => {
+    if (!currentUser) return alert("Sign in first.");
+    if (!cTier || !cMetal || !cSize) return alert("Select tier, metal, and size.");
+    const price = parseFloat(cNew);
+    if (!Number.isFinite(price)) return alert("Enter a valid price.");
+    const res = await fetch(`${ADMIN_ROOT}/chase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", ...authHeaders },
+      body: JSON.stringify({ tier: cTier, metal: cMetal, size: cSize, price }),
+    });
+    if (!res.ok) throw new Error(await res.text().catch(()=> "Failed to update chase price"));
+    await loadChase();
+  };
+
+  const saveChaseAddons = async () => {
+    if (!currentUser) return alert("Sign in first.");
+    const payload = {
+      addons: {
+        "hole.black_kynar": parseFloat(addonHBK),
+        "hole.stainless":   parseFloat(addonHSS),
+        "unsquare.black_kynar": parseFloat(addonUBK),
+        "unsquare.stainless":   parseFloat(addonUSS),
+      }
+    };
+    const res = await fetch(`${ADMIN_ROOT}/chase`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", ...authHeaders },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await res.text().catch(()=> "Failed to update add-ons"));
+    await loadChase();
+  };
+
+  // ================= ANNOUNCEMENTS =================
   const [anns, setAnns] = useState([]);
   const [annsErr, setAnnsErr] = useState("");
   const [loadingAnns, setLoadingAnns] = useState(false);
@@ -262,7 +414,7 @@ export default function Admin() {
     finally { setAdding(false); }
   };
 
-  // ================= TIERS (read + update) =================
+  // ================= TIERS =================
   const [tiers, setTiers] = useState(null);
   const [tiersErr, setTiersErr] = useState("");
   const [loadingTiers, setLoadingTiers] = useState(false);
@@ -318,8 +470,9 @@ export default function Admin() {
   useEffect(() => {
     if (tab === "factors") loadFactors();
     if (tab === "shrouds") loadShrouds();
+    if (tab === "chase")   loadChase();
     if (tab === "announcements") loadAnns();
-    if (tab === "tiers") loadTiers();
+    if (tab === "tiers")   loadTiers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
@@ -329,7 +482,6 @@ export default function Admin() {
     </pre>
   );
 
-  // ✅ moved out of JSX
   const isCorbelSelected = /corbel/i.test(fProduct);
 
   return (
@@ -353,6 +505,7 @@ export default function Admin() {
           {[
             { id: "factors", label: "Factors" },
             { id: "shrouds", label: "Shrouds" },
+            { id: "chase",   label: "Chase" },
             { id: "tiers", label: "Tiers" },
             { id: "announcements", label: "Announcements" },
           ].map((t) => (
@@ -422,7 +575,6 @@ export default function Admin() {
 
             {/* Adjustments grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Screen */}
               <div className="border rounded p-3">
                 <h3 className="font-semibold mb-2">Screen</h3>
                 <FieldTriple label="Standard" value={adj.screen.standard} onChange={(v)=>setAdjField('screen','standard',v)} />
@@ -430,7 +582,6 @@ export default function Admin() {
                 <FieldTriple label="Rate"     value={adj.screen.rate}     onChange={(v)=>setAdjField('screen','rate',v)} />
               </div>
 
-              {/* Overhang */}
               <div className="border rounded p-3">
                 <h3 className="font-semibold mb-2">Overhang</h3>
                 <FieldTriple label="Standard" value={adj.overhang.standard} onChange={(v)=>setAdjField('overhang','standard',v)} />
@@ -438,7 +589,6 @@ export default function Admin() {
                 <FieldTriple label="Rate"     value={adj.overhang.rate}     onChange={(v)=>setAdjField('overhang','rate',v)} />
               </div>
 
-              {/* Inset */}
               <div className="border rounded p-3">
                 <h3 className="font-semibold mb-2">Inset</h3>
                 <FieldTriple label="Standard" value={adj.inset.standard} onChange={(v)=>setAdjField('inset','standard',v)} />
@@ -446,8 +596,7 @@ export default function Admin() {
                 <FieldTriple label="Rate"     value={adj.inset.rate}     onChange={(v)=>setAdjField('inset','rate',v)} />
               </div>
 
-              {/* Skirt (hidden for corbel SKUs) */}
-              {!isCorbelSelected && (
+              {!/corbel/i.test(fProduct) && (
                 <div className="border rounded p-3">
                   <h3 className="font-semibold mb-2">Skirt</h3>
                   <FieldTriple label="Standard" value={adj.skirt.standard} onChange={(v)=>setAdjField('skirt','standard',v)} />
@@ -456,7 +605,6 @@ export default function Admin() {
                 </div>
               )}
 
-              {/* Pitch */}
               <div className="border rounded p-3 md:col-span-2">
                 <h3 className="font-semibold mb-2">Pitch</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -465,8 +613,7 @@ export default function Admin() {
                 </div>
               </div>
 
-              {/* Corbel (>9) add — only for corbel SKUs */}
-              {isCorbelSelected && (
+              {/corbel/i.test(fProduct) && (
                 <div className="border rounded p-3 md:col-span-2">
                   <h3 className="font-semibold mb-2">Corbel (&gt; 9) add</h3>
                   <Field
@@ -476,7 +623,7 @@ export default function Admin() {
                   />
                 </div>
               )}
-            </div>  {/* end adjustments grid */}
+            </div>
 
             <div className="flex gap-2 justify-end">
               <button onClick={resetAdjustments} disabled={!fProduct} className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300 disabled:opacity-50">Reset Adjustments</button>
@@ -498,19 +645,19 @@ export default function Admin() {
             {shroudErr && <div className="text-red-600 text-sm">{shroudErr}</div>}
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <select className="border rounded p-2" value={metal} onChange={(e) => { setMetal(e.target.value); setProduct(""); setSize(""); }}>
+              <select className="border rounded p-2" value={metal} onChange={(e) => { setMetal(e.target.value); setProduct(e.target.value ? "" : ""); setSize(""); }}>
                 <option value="">Select Metal</option>
-                {metalsS.map((m) => <option key={m} value={m}>{m}</option>)}
+                {Object.keys(shroudData || {}).map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
 
               <select className="border rounded p-2" value={product} onChange={(e) => { setProduct(e.target.value); setSize(""); }} disabled={!metal}>
                 <option value="">{metal ? "Select Product" : "Select metal first"}</option>
-                {productsS.map((p) => <option key={p} value={p}>{p}</option>)}
+                {(metal ? Object.keys(productRootForMetal(shroudData[metal]) || {}).filter((k) => !META_KEYS.has(k)) : []).map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
 
               <select className="border rounded p-2" value={size} onChange={(e) => setSize(e.target.value)} disabled={!product}>
                 <option value="">{product ? "Select Size" : "Select product first"}</option>
-                {sizesS.map((s) => <option key={s} value={s}>{s}</option>)}
+                {Object.keys((metal && product) ? sizeRootForProduct(productRootForMetal(shroudData[metal])[product]) || {} : {}).map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
 
@@ -526,6 +673,73 @@ export default function Admin() {
                 <button onClick={updateShroudPrice} disabled={!size || !newPrice} className="mt-2 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">
                   Update Price
                 </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ================= Chase Tab (new) ================= */}
+        {tab === "chase" && (
+          <section className="bg-white rounded-xl shadow p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Chase Cover Editor</h2>
+              <button onClick={loadChase} className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50" disabled={loadingChase}>
+                {loadingChase ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+
+            {chaseErr && <div className="text-red-600 text-sm">{chaseErr}</div>}
+
+            {/* price grid selectors */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <select className="border rounded p-2" value={cTier} onChange={(e)=>{ setCTier(e.target.value); setCMetal(""); setCSize(""); }}>
+                <option value="">Select Tier</option>
+                {chaseTiers.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+
+              <select className="border rounded p-2" value={cMetal} onChange={(e)=>{ setCMetal(e.target.value); setCSize(""); }} disabled={!cTier}>
+                <option value="">{cTier ? "Select Metal" : "Select tier first"}</option>
+                {chaseMetals.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+
+              <select className="border rounded p-2" value={cSize} onChange={(e)=>setCSize(e.target.value)} disabled={!cMetal}>
+                <option value="">{cMetal ? "Select Size" : "Select metal first"}</option>
+                {chaseSizes.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+
+            {/* current/new price */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="border rounded p-3 bg-gray-50">
+                <div className="text-sm text-gray-600">Current Price</div>
+                <div className="text-2xl font-semibold">{cCurrent !== null ? `$${Number(cCurrent).toFixed(2)}` : "—"}</div>
+              </div>
+              <div className="border rounded p-3">
+                <label className="block text-sm mb-1">New Price</label>
+                <input type="number" step="0.01" className="w-full border rounded p-2" value={cNew} onChange={(e)=>setCNew(e.target.value)} disabled={!cSize} />
+                <button onClick={updateChasePrice} disabled={!cSize || !cNew} className="mt-2 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">
+                  Update Price
+                </button>
+              </div>
+            </div>
+
+            {/* add-ons editor */}
+            <div className="border rounded p-4">
+              <h3 className="font-semibold mb-3">Add-ons</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="border rounded p-3">
+                  <h4 className="font-semibold mb-2">Per-Hole Charge</h4>
+                  <Field label="Black/Kynar" value={addonHBK} onChange={setAddonHBK} />
+                  <Field label="Stainless"   value={addonHSS} onChange={setAddonHSS} />
+                </div>
+                <div className="border rounded p-3">
+                  <h4 className="font-semibold mb-2">Unsquare Surcharge</h4>
+                  <Field label="Black/Kynar" value={addonUBK} onChange={setAddonUBK} />
+                  <Field label="Stainless"   value={addonUSS} onChange={setAddonUSS} />
+                </div>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <button onClick={saveChaseAddons} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700">Save Add-ons</button>
               </div>
             </div>
           </section>
@@ -639,9 +853,17 @@ export default function Admin() {
               </button>
             </div>
 
-            {loginError && <div className="text-red-600 text-sm mb-3">{loginError}</div>}
+            {loginError && (
+              <div className="text-red-600 text-sm mb-3">{loginError}</div>
+            )}
 
-            <button type="submit" disabled={isLoggingIn} className={`w-full ${isLoggingIn ? "bg-blue-400" : "bg-blue-600 hover:bg-blue-700"} text-white p-2 rounded`}>
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className={`w-full ${
+                isLoggingIn ? "bg-blue-400" : "bg-blue-600 hover:bg-blue-700"
+              } text-white p-2 rounded`}
+            >
               {isLoggingIn ? "Signing in..." : "Sign in"}
             </button>
           </form>
@@ -653,6 +875,7 @@ export default function Admin() {
 
 /* ---------- tiny input helpers ---------- */
 function Field({ label, value, onChange }) {
+  // allow empty string while typing; parse when saving
   return (
     <label className="block">
       <span className="block text-sm">{label}</span>
@@ -660,12 +883,13 @@ function Field({ label, value, onChange }) {
         type="number"
         step="0.01"
         className="w-full border rounded p-2"
-        value={value}
+        value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
       />
     </label>
   );
 }
+
 function FieldTriple({ label, value, onChange }) {
   return <Field label={label} value={value} onChange={onChange} />;
 }

@@ -1,0 +1,19 @@
+{
+  "prices": {
+    "elite": {
+      "black_galvanized": {
+        "small": 156.91
+      }
+    }
+  },
+  "addons": {
+    "hole": {
+      "black_kynar": 25,
+      "stainless": 45
+    },
+    "unsquare": {
+      "black_kynar": 60,
+      "stainless": 85
+    }
+  }
+}

@@ -19,6 +19,15 @@ function floorSteps(diff, interval) {
   return Math.floor(Math.max(0, num(diff, 0)) / i);
 }
 
+// ── Deterministic rounding helpers ─────────────────────────────────────────────
+const roundDp = (n, dp) => {
+  const p = 10 ** dp;
+  return Math.round((n + Number.EPSILON) * p) / p;
+};
+const toCents = (amount) => Math.round((amount + Number.EPSILON) * 100);
+const fromCents = (cents) => cents / 100;
+// ───────────────────────────────────────────────────────────────────────────────
+
 /**
  * @param {Object} input
  *   lengthVal, widthVal, screenVal, overhangVal, insetVal, skirtVal, pitchVal, product (string) ...
@@ -87,22 +96,33 @@ function calculateMultiPrice(input = {}, adjustments = {}, baseFactor = 0, tierM
   const totalAdjustment =
     screenAdjBase + screenLowAdj + overhangAdj + insetAdj + skirtAdj + pitchAdj + corbelAdj;
 
-  const adjustedFactor = baseFactor + totalAdjustment;
-  const tieredFactor = adjustedFactor * num(tierMultiplier, 1);
-  const finalPrice = Number.isFinite(perimeter * tieredFactor)
-    ? +(perimeter * tieredFactor).toFixed(2)
-    : 0;
+  // ── Rounding policy ─────────────────────────────────────────────────────────
+  // 1) Adjusted factor rounded to 4dp (clean logs)
+  const adjustedFactor = roundDp(baseFactor + totalAdjustment, 4);
 
-  // Return details for logging/debug
+  // 2) Tiered factor rounded to 2dp BEFORE perimeter multiply
+  const tieredFactor = roundDp(adjustedFactor * num(tierMultiplier, 1), 2);
+
+  // 3) Final price via integer cents to avoid float drift
+  const priceCents = toCents(perimeter * tieredFactor);
+  const finalPrice = fromCents(priceCents);
+  // ────────────────────────────────────────────────────────────────────────────
+
+  // Return details for logging/debug (UI should use these directly)
   return {
     product: input.product || '',
     tier: tierKey,
     baseFactor: +baseFactor.toFixed(4),
-    adjustedFactor: +adjustedFactor.toFixed(4),
+    adjustedFactor: +adjustedFactor.toFixed(4), // 4dp
     tierMultiplier: +num(tierMultiplier, 1).toFixed(4),
-    tieredFactor: +tieredFactor.toFixed(4),
+    tieredFactor: +tieredFactor.toFixed(2),     // 2dp (pre-mult)
     perimeter: +perimeter.toFixed(2),
-    finalPrice,
+
+    // cents-safe price fields (use either; identical)
+    computedPrice: finalPrice,
+    totalPrice: finalPrice,
+    finalPrice, // legacy/compat
+
     debug: {
       inputs: {
         length: L, width: W,

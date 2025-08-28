@@ -34,6 +34,35 @@ function loadTierTable() {
   try { return require('../config/tier_pricing_factors'); } catch { return {}; }
 }
 
+// >>> DISCREPANCY HOOK: hot-load the multi discrepancy table and fetch a tier delta
+function loadMultiDiscrepancies() {
+  try {
+    delete require.cache[require.resolve('../config/multi_discrepancies.js')];
+    return require('../config/multi_discrepancies.js');
+  } catch {
+    return null;
+  }
+}
+function tierToDeltaKey(t) {
+  const raw = String(t || 'elite').toLowerCase();
+  if (raw === 'value-gold' || raw === 'gold' || raw === 'vg') return 'vg';
+  if (raw === 'value-silver' || raw === 'silver' || raw === 'vs') return 'vs';
+  if (raw === 'value' || raw === 'val') return 'val';
+  return null; // no delta used for elite/builder/homeowner unless you add them
+}
+function multiDiscrepancyDelta(metalKey, productKey, tierKey) {
+  const cfg = loadMultiDiscrepancies();
+  if (!cfg) return 0;
+  const table = (cfg && typeof cfg === 'object' && cfg.data) ? cfg.data : cfg;
+  const m = table?.[metalKey];
+  const p = m?.[productKey];
+  if (!p || typeof p !== 'object') return 0;
+  const k = tierToDeltaKey(tierKey);
+  if (!k) return 0;
+  const v = Number(p[k]);
+  return Number.isFinite(v) ? v : 0;
+}
+
 // tier normalization + weight
 const TIER_ALIAS = {
   elite: 'elite',
@@ -48,17 +77,25 @@ function normalizeTierKey(t) {
   return TIER_ALIAS[raw] || 'elite';
 }
 
-// map display/raw to short codes used in tier_pricing_factors
+// map display/raw → short codes used in tier_pricing_factors
 const TIER_TO_SHORT = {
   elite: 'elite',
+
+  // value family
   value: 'val',
   'value-gold': 'vg',
   'value-silver': 'vs',
+
+  // direct human names → short
+  gold: 'vg',
+  silver: 'vs',
   builder: 'bul',
   homeowner: 'ho',
+
   // already-short forms:
   val: 'val', vg: 'vg', vs: 'vs', bul: 'bul', ho: 'ho'
 };
+
 // also try long-form keys if the table uses them
 const TIER_LONG = {
   gold: 'value-gold',
@@ -67,36 +104,43 @@ const TIER_LONG = {
 };
 // short/long-key aware tier factor resolver
 function resolveTierWeight(tierInput) {
-  const raw = String(tierInput || 'elite').toLowerCase(); // e.g., "gold"
-  const short = TIER_TO_SHORT[raw] || raw;                 // -> "vg"
-  const longForm = TIER_LONG[raw];                         // -> "value-gold" (maybe)
+  const rawIn = tierInput ?? 'elite';
+  const raw = String(rawIn).trim();
+  const lc = raw.toLowerCase();
 
+  // try short code, then the raw, then a long form alias, then a sane fallback
+  const candidates = [
+    TIER_TO_SHORT[lc] || lc,            // 'vg' for 'gold', else 'gold' itself
+    lc,                                 // 'gold'
+    (lc === 'gold' ? 'value-gold'
+      : lc === 'silver' ? 'value-silver'
+      : lc === 'value' ? 'value'
+      : undefined),
+    'elite'
+  ].filter(Boolean);
+
+  // load table (supports either {tiers:{...}} or flat {...})
   const tableRaw = loadTierTable();
-  const table = (tableRaw && typeof tableRaw === 'object')
+  const table = (tableRaw && typeof tableRaw === 'object'
     ? (tableRaw.tiers && typeof tableRaw.tiers === 'object' ? tableRaw.tiers : tableRaw)
-    : {};
+    : {}) || {};
 
-  const candidates = [short, raw, longForm, 'elite'].filter(Boolean);
-  for (const k of candidates) {
-    const v = table[k];
-    if (v != null && !Number.isNaN(+v)) return +v;
+  // build a case-insensitive map (also coerce numeric strings → numbers)
+  const lut = new Map();
+  for (const [k, v] of Object.entries(table)) {
+    const num = Number(v);
+    if (!Number.isNaN(num)) {
+      lut.set(String(k), num);
+      lut.set(String(k).toLowerCase(), num);
+    }
   }
-  return 1;
-}
 
-// chase cover helpers
-const CC_SIZE_ORDER = ['small', 'medium', 'large_no_seam', 'large_seam', 'extra_large'];
-function dimForSkirt(dimensions, S) {
-  const arr = Array.isArray(dimensions) ? dimensions : [];
-  if (!Number.isFinite(S)) return arr[0] || null;
-  let pick = null;
-  for (const d of arr) { if (S >= d.skirt) pick = d; else break; }
-  return pick || arr[arr.length - 1] || null;
+  for (const key of candidates) {
+    const found = lut.get(key) ?? lut.get(String(key).toLowerCase());
+    if (Number.isFinite(found)) return found;
+  }
+  return 1; // last-resort fallback
 }
-function toNum(v) { const n = Number(v); return Number.isFinite(n) ? n : undefined; }
-
-// health
-router.get('/_health', (_req, res) => res.json({ ok: true }));
 
 // ============================================================================
 // POST /api/calculate
@@ -330,7 +374,11 @@ router.post('/', (req, res) => {
         return res.status(400).json({ error: `No factor found for ${lowerProduct} (${metalType2})` });
       }
 
-      const baseFactor = factorRow.factor || 0;
+      // >>> DISCREPANCY HOOK: add per-metal/product/tier delta to base factor
+      const rawBaseFactor = factorRow.factor || 0;
+      const delta = multiDiscrepancyDelta(metalType2, lowerProduct, tierKey);
+      const baseFactor = +(rawBaseFactor + delta).toFixed(4);
+
       const adjustments = factorRow.adjustments || {};
       const tierWeight = resolveTierWeight(tierKey); // short/long aware
 
@@ -441,12 +489,12 @@ router.post('/', (req, res) => {
         ? { ...out, product: lowerProduct, tier: tierKey, metal: metalType2, finalPrice: +priceNum.toFixed(2), price: +priceNum.toFixed(2) }
         : { ...out, product: lowerProduct, tier: tierKey, metal: metalType2 };
 
-      const adjLine = (label, value, delta) =>
-        `${label}: ${n(value)}                      Adjustment: ${n(delta, 4)}`;
+      const adjLine = (label, value, deltaVal) =>
+        `${label}: ${n(value)}                      Adjustment: ${n(deltaVal, 4)}`;
 
       banner('MULTIFLUE', [
         `Metal: ${metalType2}`,
-        `Type: ${lowerProduct}			Factor: ${n(baseFactor, 4)}`,
+        `Type: ${lowerProduct}			Factor: ${n(baseFactor, 4)} (raw ${n(rawBaseFactor,4)} + Δ ${n(delta,4)})`,
         `Tier: ${tierKey}                     	Factor: ${n(tierWeight, 4)}`,
         `Length: ${n(input.lengthVal)}`,
         `Width: ${n(input.widthVal)}`,
