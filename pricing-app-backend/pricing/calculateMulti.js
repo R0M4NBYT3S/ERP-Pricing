@@ -26,6 +26,13 @@ const roundDp = (n, dp) => {
 };
 const toCents = (amount) => Math.round((amount + Number.EPSILON) * 100);
 const fromCents = (cents) => cents / 100;
+const ceilDp = (n, dp) => {
+  const p = 10 ** dp;
+  // subtract EPSILON so values like 9.140000000000001 don't accidentally jump another cent
+  return Math.ceil((n - Number.EPSILON) * p) / p;
+};
+
+
 // ───────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -100,28 +107,57 @@ function calculateMultiPrice(input = {}, adjustments = {}, baseFactor = 0, tierM
   // 1) Adjusted factor rounded to 4dp (clean logs)
   const adjustedFactor = roundDp(baseFactor + totalAdjustment, 4);
 
-  // 2) Tiered factor rounded to 2dp BEFORE perimeter multiply
-  const tieredFactor = roundDp(adjustedFactor * num(tierMultiplier, 1), 2);
+  // 2) Tiered factor CEILED to 2dp BEFORE perimeter multiply (business rule: never undercharge)
+  const rawTiered = adjustedFactor * num(tierMultiplier, 1);
+  const tieredFactor = ceilDp(rawTiered, 2);
 
   // 3) Final price via integer cents to avoid float drift
   const priceCents = toCents(perimeter * tieredFactor);
   const finalPrice = fromCents(priceCents);
   // ────────────────────────────────────────────────────────────────────────────
 
+  // Canonical display strings (to prevent any client recompute drift)
+  const adjustedFactorStr = adjustedFactor.toFixed(4);
+  const tieredFactorStr   = tieredFactor.toFixed(2);
+  const perimeterStr      = perimeter.toFixed(2);
+  const computedPriceStr  = finalPrice.toFixed(2);
+  const totalPriceStr     = finalPrice.toFixed(2);
+
+  // Optional preformatted printout (exactly what your panel shows)
+  const printout = {
+    adjusted: `Adjusted Factor (Base+Adj): ${adjustedFactorStr}`,
+    tiered:   `Tiered Factor ((Base+Adj)×Tier): ${tieredFactorStr}`,
+    perim:    `Perimeter (L+W): ${perimeterStr}`,
+    computed: `Computed Price (Perimeter×Tiered): ${computedPriceStr}`,
+    total:    `Total Price: ${totalPriceStr}`,
+  };
+
   // Return details for logging/debug (UI should use these directly)
   return {
     product: input.product || '',
     tier: tierKey,
-    baseFactor: +baseFactor.toFixed(4),
-    adjustedFactor: +adjustedFactor.toFixed(4), // 4dp
-    tierMultiplier: +num(tierMultiplier, 1).toFixed(4),
-    tieredFactor: +tieredFactor.toFixed(2),     // 2dp (pre-mult)
-    perimeter: +perimeter.toFixed(2),
 
-    // cents-safe price fields (use either; identical)
+    // numeric (canonical)
+    baseFactor: +baseFactor.toFixed(4),
+    adjustedFactor: +adjustedFactorStr, // 4dp
+    tierMultiplier: +num(tierMultiplier, 1).toFixed(4),
+    tieredFactor: +tieredFactorStr,     // 2dp (pre-mult)
+    perimeter: +perimeterStr,
+
+    // cents-safe price fields (identical)
     computedPrice: finalPrice,
     totalPrice: finalPrice,
-    finalPrice, // legacy/compat
+    finalPrice,
+
+    // display-safe strings (use these if any UI still concatenates strings)
+    adjustedFactorStr,
+    tieredFactorStr,
+    perimeterStr,
+    computedPriceStr,
+    totalPriceStr,
+
+    // ready-to-render lines (no math on client)
+    printout,
 
     debug: {
       inputs: {

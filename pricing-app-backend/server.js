@@ -1,78 +1,46 @@
-// server.js — mount routes/calculate and BLOCK legacy /api/chase
-
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '.env') });
-
+require('dotenv').config();
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const cors = require('cors');
-
-const { createLogger } = require('./utils/logger');
+const path = require('path');
+const log = require('./utils/logger');
 
 const app = express();
-const log = createLogger();
 
-// -------- Core middleware --------
+// 🔧 Core middleware (parsers first)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(log.http());         // adds req.log + request IDs
-app.use(cors());             // open CORS in dev
+app.use(cookieParser());
+app.use(cors());
+app.use(log.http());
 
-// Mount any non-admin API first
-app.use('/api', require('./routes/cutsheetShroud'));
+// 📂 Static file serving
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-app.post('/api/_test', (req, res) => res.json({ ok: true, where: 'server.js' }));
+// 📌 Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/admin/users', require('./routes/adminUsers'));
+app.use('/api/jobs', require('./routes/jobs'));
+app.use('/api/employees', require('./routes/employees'));
+app.use('/api/assignments', require('./routes/jobAssignments'));
+app.use('/api/calc', require('./routes/calc'));
+app.use('/api/announcements', require('./routes/announcements'));
 
-// ===== Block legacy chase route to prevent double-pricing =====
-app.use('/api/chase', (req, res) => {
-  console.warn(JSON.stringify({
-    ts: new Date().toISOString(),
-    level: 'warn',
-    msg: 'LEGACY_CHASE_ROUTE_CALLED',
-    method: req.method,
-    path: req.originalUrl
-  }, null, 2));
-
-  return res.status(410).json({
-    error: 'Legacy chase route removed. Use POST /api/calculate with product="chase_cover".'
-  });
+// ❌ 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
 });
 
-// -------- Routers --------
-
-// ✅ Mount admin *feature* routers BEFORE adminAuth so POST /api/admin/factors is reachable
-app.use('/api/admin/tiers',   require('./routes/adminTiers'));
-app.use('/api/admin/chase',   require('./routes/adminChase'));
-app.use('/api/admin',         require('./routes/adminroutes'));
-app.use('/api/admin/shrouds', require('./routes/adminShrouds'));
-
-// Admin auth after feature routers (its routes should be specific and not catch-all)
-app.use('/api/admin',         require('./routes/adminAuth'));
-
-// ✅ Unified calculator (Chase Cover + Multi + Shroud)
-app.use('/api/calculate',     require('./routes/calculate'));
-
-// ======== Optional: Announcements mounts ========
-try {
-  const announcementsRouter = require('./routes/announcements');
-  app.use('/api/announcements', announcementsRouter);
-  app.use('/api/announcement',  announcementsRouter);
-  app.use('/api/admin/announcements', announcementsRouter);
-  app.use('/api/admin/announcement',  announcementsRouter);
-  log.info('announcements_mounted');
-} catch (e) {
-  log.info('announcements_router_missing', { error: e.message });
-}
-
-// -------- Centralized error handler --------
+// 🔥 Global error handler
 app.use((err, req, res, next) => {
-  req.log?.error('unhandled_error', { err: err?.stack || String(err) });
+  console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// ---------- Boot ----------
+// 🚀 Boot server
 const PORT = process.env.PORT || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 
 app.listen(PORT, HOST, () => {
-  log.info('server_start', { port: PORT, host: HOST });
+  console.log(`✅ Server listening at http://${HOST}:${PORT}`);
 });
