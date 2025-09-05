@@ -12,6 +12,21 @@ dist
 dist-ssr
 *.local
 
+# OS junk
+.DS_Store
+Thumbs.db
+
+
+# Build artifacts
+dist/
+build/
+.cache/
+.next/
+
+.env
+.env.local
+.env.*.local
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
