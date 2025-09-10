@@ -3,7 +3,7 @@ const express = require('express');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const path = require('path');
-const log = require('./utils/logger'); // swap to morgan('tiny') if this module isn't present
+const morgan = require('morgan');
 
 const ENABLE_DB_ROUTES = process.env.ENABLE_DB_ROUTES === 'true';
 
@@ -14,7 +14,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(cors());
-app.use(log.http());
+app.use(morgan('tiny')); // simple, production-safe logging
 
 // ── health + root
 app.get('/healthz', (_req, res) => res.status(200).json({ ok: true }));
