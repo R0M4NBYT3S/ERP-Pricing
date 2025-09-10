@@ -4,8 +4,11 @@
 */
 import React, { useEffect, useMemo, useState } from "react";
 
+// feature flag: flip in Vercel via VITE_ADMIN_ENABLED
+const ADMIN_ENABLED = import.meta.env.VITE_ADMIN_ENABLED === 'true';
+
 // ---- API roots ----
-const API_ROOT   = `${window.location.protocol}//${window.location.hostname}:3001/api`;
+const API_ROOT   = `${import.meta.env.VITE_API_BASE}/api`;
 const ADMIN_ROOT = `${API_ROOT}/admin`;
 const TIERS_ENDPOINT = `${ADMIN_ROOT}/tiers`;
 
@@ -43,6 +46,29 @@ const DEFAULT_ADJUSTMENTS = {
 };
 
 export default function Admin() {
+  if (import.meta.env.VITE_ADMIN_ENABLED !== 'true') {
+    return (
+      <div className="min-h-screen w-full bg-gray-100 px-4 py-8">
+        <div className="max-w-2xl mx-auto text-center">
+          <h1 className="text-2xl font-bold">Admin — Coming Soon</h1>
+          <p className="text-gray-600 mt-2">
+            This section is temporarily disabled while pricing goes live.
+            Set <code>VITE_ADMIN_ENABLED=true</code> in Vercel and redeploy to enable it.
+          </p>
+          <div className="mt-4">
+            <a
+              href="/"
+              className="px-3 py-1 bg-gray-800 text-white rounded hover:bg-gray-700 text-sm"
+            >
+              ⬅ Back
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
   const [tab, setTab] = useState("factors");
 
   // ================= AUTH =================
