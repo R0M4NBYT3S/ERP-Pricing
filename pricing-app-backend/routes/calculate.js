@@ -2,7 +2,6 @@
 
 const express = require('express');
 const router = express.Router();
-
 const { calculateMultiPrice } = require('../pricing/calculateMulti');
 const { normalizeMetalType } = require('../utils/normalizeMetal');
 
@@ -10,6 +9,41 @@ const { normalizeMetalType } = require('../utils/normalizeMetal');
 const n = (v, d = 2) => (Number.isFinite(+v) ? Number(v).toFixed(d) : String(v ?? ''));
 const num = (v) => (Number.isFinite(+v) ? Number(v) : undefined);
 const safeNum = (v, fallback = 0) => (Number.isFinite(+v) ? Number(v) : fallback);
+
+// ---- helpers for chase-cover bucket selection ----
+// Try to import from your utilities; fall back to shims if missing.
+let toNum, dimForSkirt, CC_SIZE_ORDER;
+try {
+  // CHANGE the path if your real utils live elsewhere
+  ({ toNum, dimForSkirt, CC_SIZE_ORDER } = require('../config/pricingUtils'));
+} catch (_) {}
+
+// minimal shims (used only if the import above fails)
+toNum = toNum || ((v) => Number(v));
+CC_SIZE_ORDER = CC_SIZE_ORDER || ['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'];
+
+// Pick the dimension row whose key (skirt) is the smallest >= requested.
+// If none, use the largest available row.
+dimForSkirt =
+  dimForSkirt ||
+  function dimForSkirtShim(dimensions, skirtUsed) {
+    if (!dimensions || typeof dimensions !== 'object') return null;
+    const keys = Object.keys(dimensions)
+      .map((k) => Number(k))
+      .filter((k) => Number.isFinite(k))
+      .sort((a, b) => a - b);
+    if (!keys.length) return null;
+    const target =
+      keys.find((k) => k >= Number(skirtUsed) || 0) ?? keys[keys.length - 1];
+    const row = dimensions[String(target)];
+    if (!row || typeof row !== 'object') return null;
+    return {
+      maxLength: Number(row.maxLength ?? row.L ?? row.length ?? 0),
+      maxWidth: Number(row.maxWidth ?? row.W ?? row.width ?? 0),
+    };
+  };
+
+
 
 // pretty single-block printer
 function banner(title, body) {
@@ -184,74 +218,73 @@ const wantsChase =
 
 // ---------------------- CHASE COVER / CORBEL ----------------------
 if (wantsChase) {
+  try {
+    const L = toNum(req.body.L ?? req.body.length);
+    const W = toNum(req.body.W ?? req.body.width);
+    const S = toNum(req.body.S ?? req.body.skirt) || 0;
+    const tierKey = normalizeTierKey(req.body.tier ?? req.body.tierKey ?? tier);
 
-      const L = toNum(req.body.L ?? req.body.length);
-      const W = toNum(req.body.W ?? req.body.width);
-      const S = toNum(req.body.S ?? req.body.skirt) || 0;
-      const tierKey = normalizeTierKey(req.body.tier ?? req.body.tierKey ?? tier);
+    const rawMetalKey  = String(req.body.metalKey ?? req.body.metalType ?? req.body.metal ?? '').trim().toLowerCase();
+    const normMetalKey = normalizeMetalType(rawMetalKey);
+    const tryMetals = [];
+    if (rawMetalKey) tryMetals.push(rawMetalKey);
+    if (normMetalKey && normMetalKey !== rawMetalKey) tryMetals.push(normMetalKey);
 
-      const rawMetalKey  = String(req.body.metalKey ?? req.body.metalType ?? req.body.metal ?? '').trim().toLowerCase();
-      const normMetalKey = normalizeMetalType(rawMetalKey);
-      const tryMetals = [];
-      if (rawMetalKey) tryMetals.push(rawMetalKey);
-      if (normMetalKey && normMetalKey !== rawMetalKey) tryMetals.push(normMetalKey);
+    const isCorbel = isCorbelKeyword;
 
-      const isCorbel = isCorbelKeyword;
+    // robust hole count
+    const holesCount = (() => {
+      const raw = req.body.H ?? req.body.holes ?? req.body.holeCount;
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
 
-      const holesCount = (() => {
-  const raw = req.body.H ?? req.body.holes ?? req.body.holeCount;
-  const parsed = Number(raw);
-  if (Number.isFinite(parsed) && parsed > 0) return parsed;
-
-  const t = String(req.body.holeType ?? '').toLowerCase().trim();
-  if (t === 'offset-multi' || req.body.offsetMultiHole) {
-    const mh = Number(req.body.multiHoleCount ?? req.body.count ?? 2);
-    return Number.isFinite(mh) && mh > 0 ? mh : 2;
-  }
-  // center/offset/single default to 1
-  if (t === 'center' || t === 'single' || t === 'offset') return 1;
-
-  return 1;
-})();
-
-      const unsq = !!(req.body.U ?? req.body.unsquare);
-      const nailingFlange = safeNum(req.body.nailingFlange, 0);
-      const baseOverhang  = safeNum(req.body.baseOverhang, 0);
-      const totalTurndown = +(S + nailingFlange + baseOverhang + 1).toFixed(2);
-
-      if (!Number.isFinite(L) || !Number.isFinite(W)) {
-        banner('CHASE COVER ERROR', `BAD_DIMENSIONS\nL:${L} W:${W} S:${S}`);
-        return res.status(400).json({ error: 'BAD_DIMENSIONS', details: { L, W, S } });
+      const t = String(req.body.holeType ?? '').toLowerCase().trim();
+      if (t === 'offset-multi' || req.body.offsetMultiHole) {
+        const mh = Number(req.body.multiHoleCount ?? req.body.count ?? 2);
+        return Number.isFinite(mh) && mh > 0 ? mh : 2;
       }
+      // center/offset/single default to 1
+      if (t === 'center' || t === 'single' || t === 'offset') return 1;
 
-      const matrix = loadChaseCoverMatrix();
-      const tierSlice = matrix && matrix[tierKey];
-      if (!tierSlice) {
-        banner('CHASE COVER ERROR', `INVALID_TIER\nRequested: ${tierKey}\nAvailable: ${Object.keys(matrix || {}).join(', ')}`);
-        return res.status(400).json({ error: 'INVALID_TIER', details: { tierKey, availableTiers: Object.keys(matrix || {}) } });
+      return 1;
+    })();
+
+    const unsq = !!(req.body.U ?? req.body.unsquare);
+    const nailingFlange = safeNum(req.body.nailingFlange, 0);
+    const baseOverhang  = safeNum(req.body.baseOverhang, 0);
+    const totalTurndown = +(S + nailingFlange + baseOverhang + 1).toFixed(2);
+
+    if (!Number.isFinite(L) || !Number.isFinite(W)) {
+      banner('CHASE COVER ERROR', `BAD_DIMENSIONS\nL:${L} W:${W} S:${S}`);
+      return res.status(400).json({ error: 'BAD_DIMENSIONS', details: { L, W, S } });
+    }
+
+    const matrix = loadChaseCoverMatrix();
+    const tierSlice = matrix && matrix[tierKey];
+    if (!tierSlice) {
+      banner('CHASE COVER ERROR', `INVALID_TIER\nRequested: ${tierKey}\nAvailable: ${Object.keys(matrix || {}).join(', ')}`);
+      return res.status(400).json({ error: 'INVALID_TIER', details: { tierKey, availableTiers: Object.keys(matrix || {}) } });
+    }
+
+    let metalNode = null;
+    let resolvedMetalKey = null;
+    for (const k of tryMetals) {
+      if (k && Object.prototype.hasOwnProperty.call(tierSlice, k)) {
+        resolvedMetalKey = k;
+        metalNode = tierSlice[k];
+        break;
       }
+    }
+    if (!metalNode) {
+      banner('CHASE COVER ERROR', `Invalid metal\nRequested: ${rawMetalKey}\nNormalized: ${normMetalKey}\nAvailable: ${Object.keys(tierSlice || {}).join(', ')}`);
+      return res.status(400).json({
+        error: 'Invalid metal type for chase cover',
+        requested: rawMetalKey, normalized: normMetalKey, availableMetals: Object.keys(tierSlice || {})
+      });
+    }
 
-      let metalNode = null;
-      let resolvedMetalKey = null;
-      for (const k of tryMetals) {
-        if (k && Object.prototype.hasOwnProperty.call(tierSlice, k)) {
-          resolvedMetalKey = k;
-          metalNode = tierSlice[k];
-          break;
-        }
-      }
-      if (!metalNode) {
-        banner('CHASE COVER ERROR', `Invalid metal\nRequested: ${rawMetalKey}\nNormalized: ${normMetalKey}\nAvailable: ${Object.keys(tierSlice || {}).join(', ')}`);
-        return res.status(400).json({
-          error: 'Invalid metal type for chase cover',
-          requested: rawMetalKey, normalized: normMetalKey, availableMetals: Object.keys(tierSlice || {})
-        });
-      }
-
-      // IMPORTANT: for CORBEL, bucket selection uses TOTAL TURNDOWN as "skirt"
-      const skirtForBucket = isCorbel ? totalTurndown : S;
-
-      let sizeCategory = null;
+    // IMPORTANT: for CORBEL, bucket selection uses TOTAL TURNDOWN as "skirt"
+    const skirtForBucket = isCorbel ? totalTurndown : S;      let sizeCategory = null;
       let basePrice = null;
       for (const cat of CC_SIZE_ORDER) {
         const entry = metalNode[cat];
@@ -309,28 +342,31 @@ if (wantsChase) {
         ].join('\n'));
       }
 
-// capture as add-on; only return now if this is a pure chase request
-chaseAddOn = final;
-chaseDetails = {
-  product: 'chase_cover',
-  tier: tierKey,
-  metalType: resolvedMetalKey,
-  metal: resolvedMetalKey,
-  sizeCategory,
-  base_price,
-  holes: holesCount,
-  unsquare: !!unsq,
-  finalPrice: final,
-  price: final
-};
+    // ============== NEW FOOTER: capture add-on; only return now if pure-chase ==============
+    chaseAddOn = final;
+    chaseDetails = {
+      product: 'chase_cover',
+      tier: tierKey,
+      metalType: resolvedMetalKey,
+      metal: resolvedMetalKey,
+      sizeCategory,
+      base_price,
+      holes: holesCount,
+      unsquare: !!unsq,
+      finalPrice: final,
+      price: final
+    };
 
-if (!isShroudModel) {
-  return res.json(chaseDetails);
-}
-// else: fall through; the SHROUD block will add chaseAddOn
-
+    if (!isShroudModel) {
+      // pure chase request
+      return res.json(chaseDetails);
     }
-
+    // else: fall through; SHROUD block will add chaseAddOn to the shroud total and respond once
+  } catch (err) {
+    console.error('CHASE COVER ERROR:', err);
+    return res.status(500).json({ error: 'CHASE_COVER', message: err.message });
+  }
+}
     // ---------------------- SHROUDS (guard against corbel) ----------------------
     if ((lowerProduct.includes('shroud') || isShroudModel) && !/corbel/.test(productStr)) {
       try {
