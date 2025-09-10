@@ -20,29 +20,29 @@ try {
 
 // minimal shims (used only if the import above fails)
 toNum = toNum || ((v) => Number(v));
-CC_SIZE_ORDER = CC_SIZE_ORDER || ['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'];
+ CC_SIZE_ORDER = CC_SIZE_ORDER || [
+   'small',
+   'medium',
+   'large_no_seam',
+   'large_seam',
+   'extra_large'
+ ];
 
 // Pick the dimension row whose key (skirt) is the smallest >= requested.
 // If none, use the largest available row.
-dimForSkirt =
-  dimForSkirt ||
-  function dimForSkirtShim(dimensions, skirtUsed) {
-    if (!dimensions || typeof dimensions !== 'object') return null;
-    const keys = Object.keys(dimensions)
-      .map((k) => Number(k))
-      .filter((k) => Number.isFinite(k))
-      .sort((a, b) => a - b);
-    if (!keys.length) return null;
-    const target =
-      keys.find((k) => k >= Number(skirtUsed) || 0) ?? keys[keys.length - 1];
-    const row = dimensions[String(target)];
-    if (!row || typeof row !== 'object') return null;
-    return {
-      maxLength: Number(row.maxLength ?? row.L ?? row.length ?? 0),
-      maxWidth: Number(row.maxWidth ?? row.W ?? row.width ?? 0),
-    };
-  };
-
+ dimForSkirt =
+   dimForSkirt ||
+   function dimForSkirt(dimensions = [], skirtVal = 0) {
+     if (!Array.isArray(dimensions) || dimensions.length === 0) {
+       return { maxLength: Infinity, maxWidth: Infinity };
+     }
+     let row = dimensions.find(d => Number(d.skirt) >= Number(skirtVal));
+     if (!row) row = dimensions[dimensions.length - 1];
+     return {
+       maxLength: Number(row.maxLength),
+       maxWidth: Number(row.maxWidth)
+     };
+   };
 
 
 // pretty single-block printer
