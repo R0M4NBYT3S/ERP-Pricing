@@ -172,13 +172,19 @@ router.post('/', (req, res) => {
       .test(productStr);
     const isCorbelKeyword = /corbel/.test(productStr);
 
-    // ---------------------- CHASE COVER / CORBEL (route corbel here) ----------------------
-    if (
-      lowerProduct.includes('chase_cover') ||
-      lowerProduct.includes('chase cover') ||
-      isChaseImplicit ||
-      isCorbelKeyword // ← ensure "corbel" products are handled as chase cover
-    ) {
+// after productStr/isShroudModel/isCorbelKeyword
+let chaseAddOn = 0;
+let chaseDetails = null;
+
+const wantsChase =
+  String(req.body.chaseCover ?? req.body.chase ?? '').toLowerCase() === 'true' ||
+  lowerProduct.includes('chase_cover') ||
+  lowerProduct.includes('chase cover') ||
+  isCorbelKeyword;
+
+// ---------------------- CHASE COVER / CORBEL ----------------------
+if (wantsChase) {
+
       const L = toNum(req.body.L ?? req.body.length);
       const W = toNum(req.body.W ?? req.body.width);
       const S = toNum(req.body.S ?? req.body.skirt) || 0;
@@ -192,7 +198,22 @@ router.post('/', (req, res) => {
 
       const isCorbel = isCorbelKeyword;
 
-      const holesCount = Number(req.body.H ?? req.body.holes) || 1;
+      const holesCount = (() => {
+  const raw = req.body.H ?? req.body.holes ?? req.body.holeCount;
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+
+  const t = String(req.body.holeType ?? '').toLowerCase().trim();
+  if (t === 'offset-multi' || req.body.offsetMultiHole) {
+    const mh = Number(req.body.multiHoleCount ?? req.body.count ?? 2);
+    return Number.isFinite(mh) && mh > 0 ? mh : 2;
+  }
+  // center/offset/single default to 1
+  if (t === 'center' || t === 'single' || t === 'offset') return 1;
+
+  return 1;
+})();
+
       const unsq = !!(req.body.U ?? req.body.unsquare);
       const nailingFlange = safeNum(req.body.nailingFlange, 0);
       const baseOverhang  = safeNum(req.body.baseOverhang, 0);
@@ -288,18 +309,26 @@ router.post('/', (req, res) => {
         ].join('\n'));
       }
 
-      return res.json({
-        product: 'chase_cover',
-        tier: tierKey,
-        metalType: resolvedMetalKey,
-        metal: resolvedMetalKey,
-        sizeCategory,
-        base_price,
-        holes: holesCount,
-        unsquare: !!unsq,
-        finalPrice: final,
-        price: final
-      });
+// capture as add-on; only return now if this is a pure chase request
+chaseAddOn = final;
+chaseDetails = {
+  product: 'chase_cover',
+  tier: tierKey,
+  metalType: resolvedMetalKey,
+  metal: resolvedMetalKey,
+  sizeCategory,
+  base_price,
+  holes: holesCount,
+  unsquare: !!unsq,
+  finalPrice: final,
+  price: final
+};
+
+if (!isShroudModel) {
+  return res.json(chaseDetails);
+}
+// else: fall through; the SHROUD block will add chaseAddOn
+
     }
 
     // ---------------------- SHROUDS (guard against corbel) ----------------------
@@ -347,6 +376,17 @@ router.post('/', (req, res) => {
           `Size category: ${result.sizeCategory ?? '—'}`,
           `Final Price: ${n(result.finalPrice)}`
         ].join('\n'));
+
+if (chaseAddOn > 0) {
+  result.chaseCover = chaseDetails;
+  result.chaseCoverPrice = +chaseAddOn.toFixed(2);
+
+  const base = Number(result.finalPrice ?? result.price ?? priceNum) || 0;
+  const combined = base + chaseAddOn;
+  result.finalPrice = +combined.toFixed(2);
+  result.price = result.finalPrice;
+}
+
 
         return res.json(result);
       } catch (e) {
