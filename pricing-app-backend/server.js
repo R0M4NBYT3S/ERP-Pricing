@@ -4,10 +4,10 @@ const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const path = require('path');
 const morgan = require('morgan');
-
 const ENABLE_DB_ROUTES = process.env.ENABLE_DB_ROUTES === 'true';
-
 const app = express();
+const calcRouter = require('./routes/calc');
+
 
 // ── core middleware
 app.use(express.json());
@@ -15,6 +15,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(cors());
 app.use(morgan('tiny')); // simple, production-safe logging
+app.use('/api/calc', calcRouter);
+app.use('/api/calculate', calcRouter); // keep old path working too
+
 
 // ── health + root
 app.get('/healthz', (_req, res) => res.status(200).json({ ok: true }));
@@ -22,10 +25,6 @@ app.get('/', (_req, res) => res.send('API online'));
 
 // ── static
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// ── routes
-// keep calc online for testing without DB:
-app.use('/api/calc', require('./routes/calc'));
 
 // gate DB-backed routes until SQL is enabled
 if (ENABLE_DB_ROUTES) {
