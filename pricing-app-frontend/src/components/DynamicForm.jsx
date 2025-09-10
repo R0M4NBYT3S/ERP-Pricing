@@ -11,6 +11,12 @@ const RAW_BASE =
   'http://192.168.0.73:3001';
 const API_BASE = String(RAW_BASE).replace(/\/+$/, '').replace(/\/api$/, '');
 
+const CUTSHEET_ENABLED =
+  typeof import.meta !== 'undefined' &&
+  import.meta.env &&
+  import.meta.env.VITE_CUTSHEET_ENABLED === 'true';
+
+
 // ----- Fraction helpers (support up to 1/16") -----
 const FRACTION_FIELDS = new Set(['length', 'width', 'skirt', 'length2', 'width2']); // includes unsquare pair
 
@@ -959,22 +965,32 @@ function DynamicForm() {
             );
           })}
 
-        <div className="w-full flex justify-center mt-2 space-x-2">
-          <button
-            onClick={calculatePrice}
-            className="w-1/2 bg-blue-600 text-white p-2 rounded hover:bg-blue-700 text-center"
-          >
-            Calculate
-          </button>
+<div className="w-full flex justify-center mt-2 space-x-2">
+  <button
+    onClick={calculatePrice}
+    className="w-1/2 bg-blue-600 text-white p-2 rounded hover:bg-blue-700 text-center"
+  >
+    Calculate
+  </button>
 
-          <button
-            onClick={generateCutSheet}
-            className="w-1/2 bg-green-600 text-white p-2 rounded hover:bg-green-700 text-center"
-            disabled={price === null}
-          >
-            Generate Cut Sheet
-          </button>
-        </div>
+  {CUTSHEET_ENABLED ? (
+    <button
+      onClick={generateCutSheet}
+      className="w-1/2 bg-green-600 text-white p-2 rounded hover:bg-green-700 text-center"
+      disabled={price === null}
+    >
+      Generate Cut Sheet
+    </button>
+  ) : (
+    <button
+      className="w-1/2 bg-gray-300 text-gray-600 p-2 rounded cursor-not-allowed text-center"
+      disabled
+      title="Cut sheets are temporarily disabled"
+    >
+      Generate Cut Sheet (coming soon)
+    </button>
+  )}
+</div>
 
         <div className="text-center font-semibold text-lg mt-4">
           Price: ${price !== null ? price.toFixed(2) : '0.00'}
