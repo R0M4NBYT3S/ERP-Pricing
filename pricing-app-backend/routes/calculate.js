@@ -284,17 +284,29 @@ if (wantsChase) {
     }
 
     // IMPORTANT: for CORBEL, bucket selection uses TOTAL TURNDOWN as "skirt"
-    const skirtForBucket = isCorbel ? totalTurndown : S;      let sizeCategory = null;
-      let basePrice = null;
-      for (const cat of CC_SIZE_ORDER) {
-        const entry = metalNode[cat];
-        if (!entry || typeof entry !== 'object' || !('basePrice' in entry)) continue;
-        const chosen = dimForSkirt(entry.dimensions, skirtForBucket || 0);
-        if (chosen && L <= chosen.maxLength && W <= chosen.maxWidth) {
-          sizeCategory = cat;
-          basePrice = Number(entry.basePrice);
-          break;
-        }
+    const skirtForBucket = isCorbel ? totalTurndown : S;      
+
+// local helpers for chase cover matrix (array-of-rows dimensions)
+const SIZE_ORDER = ['small','medium','large_no_seam','large_seam','extra_large'];
+const pickDims = (dimensions = [], skirtVal = 0) => {
+  const arr = Array.isArray(dimensions) ? dimensions : [];
+  if (arr.length === 0) return null;
+  let row = arr.find(d => Number(d.skirt) >= Number(skirtVal));
+  if (!row) row = arr[arr.length - 1];
+  return { maxLength: Number(row.maxLength), maxWidth: Number(row.maxWidth) };
+};
+
+ let sizeCategory = null;
+ let basePrice = null;
+ for (const cat of SIZE_ORDER) {
+   const entry = metalNode?.[cat];
+   if (!entry || typeof entry !== 'object' || !('basePrice' in entry)) continue;
+   const chosen = pickDims(entry.dimensions, skirtForBucket || 0);
+   if (chosen && L <= chosen.maxLength && W <= chosen.maxWidth) {
+     sizeCategory = cat;
+     basePrice = Number(entry.basePrice);
+     break;
+  }
       }
       if (!sizeCategory || !Number.isFinite(basePrice)) {
         banner('CHASE COVER ERROR', `SIZE_BUCKET_UNRESOLVED\nL:${L} W:${W} (skirtUsed:${skirtForBucket})\nTier:${tierKey} Metal:${resolvedMetalKey}`);
