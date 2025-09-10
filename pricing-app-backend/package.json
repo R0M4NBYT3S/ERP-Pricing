@@ -34,7 +34,7 @@
 }
 {
   "type": "module",
-  "engines": { "node": ">=18 <22" },
+  "engines": { "node": "20.x" },
   "scripts": {
     "start": "node server.js"
   },
