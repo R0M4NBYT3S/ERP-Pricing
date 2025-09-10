@@ -15,7 +15,24 @@ const calcRouter = require('./routes/calculate');
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(cors());
+
+// CORS (allow Vercel + local dev) + handle preflights
+const FRONTENDS = [
+  'https://erp-pricing.vercel.app',
+  'http://localhost:5173',
+];
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || FRONTENDS.includes(origin)) return cb(null, true);
+    return cb(null, false);
+  },
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false,
+  maxAge: 86400,
+}));
+app.options('*', cors());
+
 app.use(morgan('tiny')); // simple, production-safe logging
 
 // keep calc online for testing without DB:
