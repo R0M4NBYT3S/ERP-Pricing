@@ -972,24 +972,6 @@ function DynamicForm() {
   >
     Calculate
   </button>
-
-  {CUTSHEET_ENABLED ? (
-    <button
-      onClick={generateCutSheet}
-      className="w-1/2 bg-green-600 text-white p-2 rounded hover:bg-green-700 text-center"
-      disabled={price === null}
-    >
-      Generate Cut Sheet
-    </button>
-  ) : (
-    <button
-      className="w-1/2 bg-gray-300 text-gray-600 p-2 rounded cursor-not-allowed text-center"
-      disabled
-      title="Cut sheets are temporarily disabled"
-    >
-      Generate Cut Sheet (coming soon)
-    </button>
-  )}
 </div>
 
         <div className="text-center font-semibold text-lg mt-4">
