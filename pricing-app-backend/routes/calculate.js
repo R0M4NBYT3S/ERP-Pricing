@@ -10,6 +10,7 @@ const n = (v, d = 2) => (Number.isFinite(+v) ? Number(v).toFixed(d) : String(v ?
 const num = (v) => (Number.isFinite(+v) ? Number(v) : undefined);
 const safeNum = (v, fallback = 0) => (Number.isFinite(+v) ? Number(v) : fallback);
 
+
 // ---- helpers for chase-cover bucket selection ----
 let toNum, dimForSkirt, CC_SIZE_ORDER;
 try {
@@ -152,7 +153,7 @@ router.post('/', (req, res) => {
     const isChaseImplicit =
       Number.isFinite(+req.body.L) && Number.isFinite(+req.body.W) &&
       (req.body.metalKey || req.body.metalType || req.body.metal);
-
+const powdercoat = String(req.body.powdercoat).toLowerCase() === 'true';
     let product   = req.body.product;
     let metalType = normalizeMetalType(req.body.metalType);
     let metal     = normalizeMetalType(req.body.metal) || metalType;
@@ -294,46 +295,41 @@ console.log("💥 POWDERCOAT CHECK (chase):", {
   finalPriceBefore: final
 });
 
-let adjustedFinal = final;
-if (req.body.powdercoat && /(ss|stainless)/i.test(resolvedMetalKey)) {
-  const bumped = +(adjustedFinal * 1.3).toFixed(2);
-  adjustedFinal = bumped;
+let chasePrice = final;
+
+if (powdercoat && /(ss|stainless)/i.test(resolvedMetalKey)) {
+  const bumped = +(final * 1.3).toFixed(2);
+  chasePrice = bumped;
   console.log("✅ POWDERCOAT APPLIED (chase):", { bumped });
 }
 
+banner('CHASE COVER', [
+  `Metal: ${resolvedMetalKey}`,
+  `Length: ${n(L)} Width: ${n(W)} Skirt: ${n(S)}`,
+  `Hole Count: ${holesCount} Adj: ${n(holesAdj)}`,
+  `Unsquare: ${unsq ? 'Yes' : 'No'} Adj: ${n(unsqAdj)}`,
+  `Size Category: ${sizeCategory}`,
+  `Tier: ${tierKey}`,
+  `Final Price: ${n(chasePrice)}`
+].join('\n'));
 
-        banner('CHASE COVER', [
-          `Metal: ${resolvedMetalKey}`,
-          `Length: ${n(L)} Width: ${n(W)} Skirt: ${n(S)}`,
-          `Hole Count: ${holesCount} Adj: ${n(holesAdj)}`,
-          `Unsquare: ${unsq ? 'Yes' : 'No'} Adj: ${n(unsqAdj)}`,
-          `Size Category: ${sizeCategory}`,
-          `Tier: ${tierKey}`,
-          `Final Price: ${n(adjustedFinal)}`
-        ].join('\n'));
+chaseAddOn = chasePrice;
+chaseDetails = {
+  product: 'chase_cover',
+  tier: tierKey,
+  metalType: resolvedMetalKey,
+  metal: resolvedMetalKey,
+  sizeCategory,
+  base_price,
+  holes: holesCount,
+  unsquare: !!unsq,
+  finalPrice: chasePrice,
+  price: chasePrice
+};
 
-        chaseAddOn = adjustedFinal;
-        chaseDetails = {
-          product: 'chase_cover',
-          tier: tierKey,
-          metalType: resolvedMetalKey,
-          metal: resolvedMetalKey,
-          sizeCategory,
-          base_price,
-          holes: holesCount,
-          unsquare: !!unsq,
-          finalPrice: adjustedFinal,
-          price: adjustedFinal
-        };
-
-        if (!isShroudModel) {
-          return res.json(chaseDetails);
-        }
-      } catch (err) {
-        console.error('CHASE COVER ERROR:', err);
-        return res.status(500).json({ error: 'CHASE_COVER', message: err.message });
-      }
-    }
+if (!isShroudModel) {
+  return res.json(chaseDetails);
+}
 
     // ---------------------- SHROUDS ----------------------
     if ((lowerProduct.includes('shroud') || isShroudModel) && !/corbel/.test(productStr)) {
@@ -377,7 +373,7 @@ console.log("💥 POWDERCOAT CHECK (shroud):", {
   finalPriceBefore: result.finalPrice
 });
 
-if (req.body.powdercoat && /(ss|stainless)/i.test(result.metal)) {
+if (powdercoat && /(ss|stainless)/i.test(result.metal)) {
   const bumped = +(result.finalPrice * 1.3).toFixed(2);
   result.finalPrice = bumped;
   result.price = bumped;
@@ -454,16 +450,13 @@ console.log("💥 POWDERCOAT CHECK (multi):", {
   finalPriceBefore: result.finalPrice
 });
 
-if (req.body.powdercoat && /(ss|stainless)/i.test(metalType2)) {
+if (powdercoat && /(ss|stainless)/i.test(metalType2)) {
   const bumped = +(result.finalPrice * 1.3).toFixed(2);
   result.finalPrice = bumped;
   result.price = bumped;
-
-  // update printout if it exists
   if (result.printout) {
     result.printout.total = `Total Price (with Powdercoat): ${bumped.toFixed(2)}`;
   }
-
   console.log("✅ POWDERCOAT APPLIED:", { bumped });
 }
 
