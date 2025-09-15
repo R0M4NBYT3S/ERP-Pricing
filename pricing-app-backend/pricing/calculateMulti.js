@@ -1,185 +1,141 @@
-// pricing/calculateMulti.js
-// Multi-flue price calculator
-// Formula: finalPrice = (L + W) * ((baseFactor + adjustments) * tierMultiplier)
+// routes/calculate.js — Orchestrator (fixed for Chase + Shroud)
+const express = require('express');
+const router = express.Router();
 
-function num(v, dflt = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : dflt;
+const { calculateChaseCover } = require('../pricing/calculateChaseCover');
+const { calculateShroud } = require('../pricing/calculateShroud');
+const { calculateMultiPrice } = require('../pricing/calculateMulti');
+const { normalizeMetalType } = require('../utils/normalizeMetal');
+
+const tierFactors = require('../config/tier_pricing_factors.json');
+const multiFactors = require('../config/multiFactors.json');
+const multiDiscrepancies = require('../config/multi_discrepancies');
+const { data: multiDiscrepancyData } = multiDiscrepancies;
+
+// ───────────────────────────────────────────────
+// Tier resolution
+function resolveTierFactor(tierInput) {
+  const key = String(tierInput || 'elite').toLowerCase();
+  const table = tierFactors.tiers || tierFactors;
+  if (!table[key]) return { tierKey: 'elite', factor: 1 };
+  return { tierKey: key, factor: table[key] };
 }
 
-function ceilSteps(diff, interval) {
-  const i = num(interval, 0);
-  if (!(i > 0)) return 0;
-  return Math.ceil(Math.max(0, num(diff, 0)) / i);
-}
-
-function floorSteps(diff, interval) {
-  const i = num(interval, 0);
-  if (!(i > 0)) return 0;
-  return Math.floor(Math.max(0, num(diff, 0)) / i);
-}
-
-// ── Deterministic rounding helpers ─────────────────────────────────────────────
-const roundDp = (n, dp) => {
-  const p = 10 ** dp;
-  return Math.round((n + Number.EPSILON) * p) / p;
-};
-const toCents = (amount) => Math.round((amount + Number.EPSILON) * 100);
-const fromCents = (cents) => cents / 100;
-const ceilDp = (n, dp) => {
-  const p = 10 ** dp;
-  // subtract EPSILON so values like 9.140000000000001 don't accidentally jump another cent
-  return Math.ceil((n - Number.EPSILON) * p) / p;
-};
-
-
-// ───────────────────────────────────────────────────────────────────────────────
-
-/**
- * @param {Object} input
- *   lengthVal, widthVal, screenVal, overhangVal, insetVal, skirtVal, pitchVal, product (string) ...
- * @param {Object} adjustments table, e.g. {
- *   screen: { standard, interval, rate },
- *   overhang: { standard, interval, rate },
- *   inset: { standard, interval, rate },
- *   skirt: { standard, interval, rate },
- *   pitch: { below, above }
- * }
- * @param {number} baseFactor      → product/type base factor
- * @param {number} tierMultiplier  → tier factor (val/vg/vs/etc.)
- * @param {string} tierKey         → tier name (for debug only)
- */
-function calculateMultiPrice(input = {}, adjustments = {}, baseFactor = 0, tierMultiplier = 1, tierKey = 'elite') {
-  const L = num(input.lengthVal);
-  const W = num(input.widthVal);
-  const perimeter = L + W;
-
-  // Screen (ceil above standard)
-  const scrStd  = num(adjustments?.screen?.standard, 0);
-  const scrInt  = num(adjustments?.screen?.interval, 0);
-  const scrRate = num(adjustments?.screen?.rate, 0);
-  const screenSteps = ceilSteps(num(input.screenVal) - scrStd, scrInt);
-  const screenAdjBase = screenSteps * scrRate;
-
-  // New rule: screen <= 8 gets -0.19 (additive to base screen calc)
-  const screenLowAdj = num(input.screenVal) <= 8 ? -0.19 : 0;
-
-  // Overhang (ceil 1" steps ABOVE standard; never subtract). Default standard 5".
-  const ovStd  = num(adjustments?.overhang?.standard, 5);
-  const ovInt  = num(adjustments?.overhang?.interval, 1);
-  const ovRate = num(adjustments?.overhang?.rate, 0);
-  const ovDiff = Math.max(0, num(input.overhangVal) - ovStd);
-  const overhangSteps = ovDiff > 0 ? Math.ceil(ovDiff / ovInt) : 0;
-  const overhangAdj = overhangSteps * ovRate;
-
-  // Inset (floor steps)
-  const inStd  = num(adjustments?.inset?.standard, 0);
-  const inInt  = num(adjustments?.inset?.interval, 0);
-  const inRate = num(adjustments?.inset?.rate, 0);
-  const insetSteps = floorSteps(num(input.insetVal) - inStd, inInt);
-  const insetAdj = insetSteps * inRate;
-
-  // Skirt (floor steps)
-  const skStd  = num(adjustments?.skirt?.standard, 0);
-  const skInt  = num(adjustments?.skirt?.interval, 0);
-  const skRate = num(adjustments?.skirt?.rate, 0);
-  const skirtSteps = floorSteps(num(input.skirtVal) - skStd, skInt);
-  const skirtAdj = skirtSteps * skRate;
-
-  // Pitch: <=5 add "below" once; 6-9 add 0; >=10 add floor(p-9) * "above"
-  const p = num(input.pitchVal);
-  const pBelow = num(adjustments?.pitch?.below, 0);
-  const pAbove = num(adjustments?.pitch?.above, 0);
-  let pitchAdj = 0;
-  if (p <= 5) pitchAdj += pBelow;
-  else if (p >= 10) pitchAdj += Math.floor(p - 9) * pAbove;
-
-  // Corbel bonus: +0.15 if inset+overhang+skirt > 9 and product contains 'corbel'
-  const isCorbel = typeof input.product === 'string' && input.product.toLowerCase().includes('corbel');
-  const sumCOS = num(input.insetVal) + num(input.overhangVal) + num(input.skirtVal);
-  const corbelAdj = isCorbel && sumCOS > 9 ? 0.15 : 0;
-
-  // Totals
-  const totalAdjustment =
-    screenAdjBase + screenLowAdj + overhangAdj + insetAdj + skirtAdj + pitchAdj + corbelAdj;
-
-  // ── Rounding policy ─────────────────────────────────────────────────────────
-  // 1) Adjusted factor rounded to 4dp (clean logs)
-  const adjustedFactor = roundDp(baseFactor + totalAdjustment, 4);
-
-  // 2) Tiered factor CEILED to 2dp BEFORE perimeter multiply (business rule: never undercharge)
-  const rawTiered = adjustedFactor * num(tierMultiplier, 1);
-  const tieredFactor = ceilDp(rawTiered, 2);
-
-  // 3) Final price via integer cents to avoid float drift
-  const priceCents = toCents(perimeter * tieredFactor);
-  const finalPrice = fromCents(priceCents);
-  // ────────────────────────────────────────────────────────────────────────────
-
-  // Canonical display strings (to prevent any client recompute drift)
-  const adjustedFactorStr = adjustedFactor.toFixed(4);
-  const tieredFactorStr   = tieredFactor.toFixed(2);
-  const perimeterStr      = perimeter.toFixed(2);
-  const computedPriceStr  = finalPrice.toFixed(2);
-  const totalPriceStr     = finalPrice.toFixed(2);
-
-  // Optional preformatted printout (exactly what your panel shows)
-  const printout = {
-    adjusted: `Adjusted Factor (Base+Adj): ${adjustedFactorStr}`,
-    tiered:   `Tiered Factor ((Base+Adj)×Tier): ${tieredFactorStr}`,
-    perim:    `Perimeter (L+W): ${perimeterStr}`,
-    computed: `Computed Price (Perimeter×Tiered): ${computedPriceStr}`,
-    total:    `Total Price: ${totalPriceStr}`,
-  };
-
-  // Return details for logging/debug (UI should use these directly)
-  return {
-    product: input.product || '',
-    tier: tierKey,
-
-    // numeric (canonical)
-    baseFactor: +baseFactor.toFixed(4),
-    adjustedFactor: +adjustedFactorStr, // 4dp
-    tierMultiplier: +num(tierMultiplier, 1).toFixed(4),
-    tieredFactor: +tieredFactorStr,     // 2dp (pre-mult)
-    perimeter: +perimeterStr,
-
-    // cents-safe price fields (identical)
-    computedPrice: finalPrice,
-    totalPrice: finalPrice,
-    finalPrice,
-
-    // display-safe strings (use these if any UI still concatenates strings)
-    adjustedFactorStr,
-    tieredFactorStr,
-    perimeterStr,
-    computedPriceStr,
-    totalPriceStr,
-
-    // ready-to-render lines (no math on client)
-    printout,
-
-    debug: {
-      inputs: {
-        length: L, width: W,
-        screen: num(input.screenVal),
-        overhang: num(input.overhangVal),
-        inset: num(input.insetVal),
-        skirt: num(input.skirtVal),
-        pitch: num(input.pitchVal)
-      },
-      adjustments: {
-        screen_base: +screenAdjBase.toFixed(4),
-        screen_low8: +screenLowAdj.toFixed(4),
-        overhang: +overhangAdj.toFixed(4),
-        inset: +insetAdj.toFixed(4),
-        skirt: +skirtAdj.toFixed(4),
-        pitch: +pitchAdj.toFixed(4),
-        corbel: +corbelAdj.toFixed(4),
-        total: +totalAdjustment.toFixed(4)
-      }
+// ───────────────────────────────────────────────
+// Global powdercoat bump
+function applyPowdercoatIfNeeded(result, powdercoat) {
+  if (powdercoat && /(ss|stainless)/i.test(result.metal || result.metalType)) {
+    const bumped = +(result.finalPrice * 1.3).toFixed(2);
+    result.finalPrice = bumped;
+    result.price = bumped;
+    if (result.printout) {
+      result.printout.total = `Total Price (with Powdercoat): ${bumped.toFixed(2)}`;
     }
-  };
+  }
+  return result;
 }
 
-module.exports = { calculateMultiPrice };
+// ───────────────────────────────────────────────
+// POST /api/calculate
+router.post('/', (req, res) => {
+  try {
+    const product = String(req.body.product || '').toLowerCase();
+    const metal = normalizeMetalType(req.body.metal || req.body.metalType);
+    const { tierKey, factor: tierMultiplier } = resolveTierFactor(req.body.tier);
+    const powdercoat = String(req.body.powdercoat).toLowerCase() === 'true';
+
+    let rawResult;
+
+    // ── Chase Covers ──
+    if (product.includes('chase')) {
+      rawResult = calculateChaseCover({
+        lengthVal: req.body.length || req.body.L,
+        widthVal: req.body.width || req.body.W,
+        skirtVal: req.body.skirt || req.body.S,
+        metalType: metal,
+        unsquare: req.body.unsquare,
+        holeCount: req.body.holes
+      }, tierKey);
+
+      // Normalize field names
+      if (rawResult.final_price != null) {
+        rawResult.finalPrice = rawResult.final_price;
+        rawResult.price = rawResult.final_price;
+      }
+
+      // Chase pricing is already tiered → do NOT apply global tier multiplier
+      rawResult.tier = tierKey;
+      rawResult.tierMultiplier = 1;
+      rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
+    }
+
+    // ── Shrouds ──
+    else if (product.includes('shroud') && !/corbel/.test(product)) {
+      rawResult = calculateShroud({
+        length: req.body.length,
+        width: req.body.width,
+        metal,
+        model: req.body.model || product
+      });
+
+      // Shroud pricing is table-based, not multiplier-based
+      rawResult.tier = tierKey;
+      rawResult.tierMultiplier = 1;
+      rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
+    }
+
+    // ── Multi-Flue ──
+    else if (product.includes('flat_top') || product.includes('hip') || product.includes('ridge')) {
+      const factorRow = (multiFactors || []).find(f =>
+        String(f.metal).toLowerCase() === metal &&
+        String(f.product).toLowerCase() === product &&
+        String(f.tier || 'elite').toLowerCase() === 'elite'
+      );
+      if (!factorRow) {
+        return res.status(400).json({ error: `No factor found for ${product} (${metal})` });
+      }
+
+      const rawBaseFactor = factorRow.factor || 0;
+      const delta = (multiDiscrepancyData?.[metal]?.[product]?.[tierKey]) || 0;
+      const baseFactor = +(rawBaseFactor + delta).toFixed(4);
+
+      const input = {
+        lengthVal: req.body.length,
+        widthVal: req.body.width,
+        screenVal: req.body.screenHeight || req.body.screen,
+        overhangVal: req.body.lidOverhang || req.body.overhang,
+        insetVal: req.body.inset,
+        skirtVal: req.body.skirt,
+        pitchVal: req.body.pitch,
+        product,
+        metal,
+        tier: tierKey
+      };
+
+      rawResult = calculateMultiPrice(
+        input,
+        factorRow.adjustments,
+        baseFactor,
+        tierMultiplier,
+        tierKey
+      );
+
+      rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
+      rawResult.tier = tierKey;
+      rawResult.tierMultiplier = tierMultiplier;
+    }
+
+    // ── Unknown product ──
+    else {
+      return res.status(400).json({ error: 'Unknown product type', product });
+    }
+
+    return res.json(rawResult);
+
+  } catch (err) {
+    console.error('CALCULATE ERROR:', err);
+    return res.status(500).json({ error: 'Internal server error', message: err.message });
+  }
+});
+
+module.exports = router;
