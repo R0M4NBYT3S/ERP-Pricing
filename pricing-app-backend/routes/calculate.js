@@ -1,4 +1,4 @@
-// routes/calculate.js — Orchestrator
+// routes/calculate.js — Orchestrator (final fixed)
 const express = require('express');
 const router = express.Router();
 
@@ -12,8 +12,18 @@ const multiFactors = require('../config/multiFactors.json');
 const multiDiscrepancies = require('../config/multi_discrepancies');
 const { data: multiDiscrepancyData } = multiDiscrepancies;
 
+// Map short keys → long form names for Chase & Shroud
+const chaseShroudTierMap = {
+  elite: 'elite',
+  vg: 'value gold',
+  vs: 'value silver',
+  val: 'value',
+  bul: 'builder',
+  ho: 'homeowner'
+};
+
 // ───────────────────────────────────────────────
-// Tier resolution
+// Tier resolution (for multi-flue math)
 function resolveTierFactor(tierInput) {
   const key = String(tierInput || 'elite').toLowerCase();
   const table = tierFactors.tiers || tierFactors;
@@ -24,7 +34,7 @@ function resolveTierFactor(tierInput) {
 // ───────────────────────────────────────────────
 // Global powdercoat bump
 function applyPowdercoatIfNeeded(result, powdercoat) {
-  if (powdercoat && /(ss|stainless)/i.test(result.metal)) {
+  if (powdercoat && /(ss|stainless)/i.test(result.metal || result.metalType)) {
     const bumped = +(result.finalPrice * 1.3).toFixed(2);
     result.finalPrice = bumped;
     result.price = bumped;
@@ -46,46 +56,50 @@ router.post('/', (req, res) => {
 
     let rawResult;
 
-// ── Chase Covers ──
-if (product.includes('chase')) {
-  const mappedTier = chaseShroudTierMap[tierKey] || 'elite';
-  rawResult = calculateChaseCover({
-    lengthVal: req.body.length || req.body.L,
-    widthVal: req.body.width || req.body.W,
-    skirtVal: req.body.skirt || req.body.S,
-    metalType: metal,
-    unsquare: req.body.unsquare,
-    holeCount: req.body.holes
-  }, mappedTier);
+    // ── Chase Covers ──
+    if (product.includes('chase')) {
+      const mappedTier = chaseShroudTierMap[tierKey] || 'elite';
+      rawResult = calculateChaseCover({
+        lengthVal: req.body.length || req.body.L,
+        widthVal: req.body.width || req.body.W,
+        skirtVal: req.body.skirt || req.body.S,
+        metalType: metal,
+        unsquare: req.body.unsquare,
+        holeCount: req.body.holes
+      }, mappedTier);
 
-  if (rawResult.final_price != null) {
-    rawResult.finalPrice = rawResult.final_price;
-    rawResult.price = rawResult.final_price;
-  }
+      if (rawResult.final_price != null) {
+        rawResult.finalPrice = rawResult.final_price;
+        rawResult.price = rawResult.final_price;
+      }
 
-  rawResult.tier = mappedTier;
-  rawResult.tierMultiplier = 1;
-  rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
-}
+      rawResult.tier = mappedTier;
+      rawResult.tierMultiplier = 1;
+      rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
+      return res.json(rawResult);
+    }
 
-// ── Shrouds ──
-else if (
-  product.includes('shroud') ||
-  ['dynasty','majesty','monaco','royale','durham','monarch','regal',
-   'princess','prince','temptress','imperial','centurion','mountaineer',
-   'emperor'].some(name => product.includes(name))
-) {
-  rawResult = calculateShroud({
-    length: req.body.length,
-    width: req.body.width,
-    metal,
-    model: req.body.model || product
-  });
+    // ── Shrouds ──
+    else if (
+      product.includes('shroud') ||
+      ['dynasty','majesty','monaco','royale','durham','monarch','regal',
+       'princess','prince','temptress','imperial','centurion','mountaineer',
+       'emperor'].some(name => product.includes(name))
+    ) {
+      const mappedTier = chaseShroudTierMap[tierKey] || 'elite';
+      rawResult = calculateShroud({
+        length: req.body.length,
+        width: req.body.width,
+        metal,
+        model: req.body.model || product,
+        tier: mappedTier
+      });
 
-  rawResult.tier = tierKey;
-  rawResult.tierMultiplier = 1;
-  rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
-}
+      rawResult.tier = mappedTier;
+      rawResult.tierMultiplier = 1;
+      rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
+      return res.json(rawResult);
+    }
 
     // ── Multi-Flue ──
     else if (product.includes('flat_top') || product.includes('hip') || product.includes('ridge')) {
@@ -122,30 +136,27 @@ else if (
         tierMultiplier,
         tierKey
       );
+
+      // Apply global adjustments for multi only
+      if (typeof rawResult.finalPrice !== 'number') {
+        const baseCandidate = rawResult.finalPrice || rawResult.price || rawResult.base_price;
+        if (typeof baseCandidate === 'number') {
+          rawResult.finalPrice = +(baseCandidate * tierMultiplier).toFixed(2);
+          rawResult.price = rawResult.finalPrice;
+        }
+      }
+
+      rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
+      rawResult.tier = tierKey;
+      rawResult.tierMultiplier = tierMultiplier;
+
+      return res.json(rawResult);
     }
 
     // ── Unknown product ──
     else {
       return res.status(400).json({ error: 'Unknown product type', product });
     }
-
-    // Ensure result has numeric finalPrice
-    if (typeof rawResult.finalPrice !== 'number') {
-      const baseCandidate = rawResult.finalPrice || rawResult.price || rawResult.base_price;
-      if (typeof baseCandidate === 'number') {
-        rawResult.finalPrice = +(baseCandidate * tierMultiplier).toFixed(2);
-        rawResult.price = rawResult.finalPrice;
-      }
-    }
-
-    // Apply powdercoat bump last
-    const finalResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
-
-    // Normalize tier + multiplier
-    finalResult.tier = tierKey;
-    finalResult.tierMultiplier = tierMultiplier;
-
-    return res.json(finalResult);
 
   } catch (err) {
     console.error('CALCULATE ERROR:', err);
