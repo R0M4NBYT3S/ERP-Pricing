@@ -4,8 +4,7 @@ const router = express.Router();
 
 const { calculateChaseCover } = require('../pricing/calculateChaseCover');
 const { calculateShroud } = require('../pricing/calculateShroud');
-const calculateMultiPrice = require('../pricing/calculateMulti');
-
+const { calculateMultiPrice } = require('../pricing/calculateMulti');
 const { normalizeMetalType } = require('../utils/normalizeMetal');
 
 const tierFactors = require('../config/tier_pricing_factors.json');
