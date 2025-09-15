@@ -15,12 +15,13 @@ const { data: multiDiscrepancyData } = multiDiscrepancies;
 // Map short keys → long form names for Chase & Shroud
 const chaseShroudTierMap = {
   elite: 'elite',
-  vg: 'value gold',
-  vs: 'value silver',
+  vg: 'gold',
+  vs: 'silver',
   val: 'value',
   bul: 'builder',
   ho: 'homeowner'
 };
+
 
 // ───────────────────────────────────────────────
 // Tier resolution (for multi-flue math)
