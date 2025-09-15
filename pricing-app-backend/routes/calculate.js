@@ -468,6 +468,5 @@ if (powdercoat && /(ss|stainless)/i.test(metalType2)) {
   } catch (err) {
     return res.status(500).json({ error: 'Internal server error' });
   }
-});
 
 module.exports = router;
