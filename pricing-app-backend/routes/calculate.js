@@ -63,16 +63,24 @@ router.post('/', (req, res) => {
       }
     }
 
-    // ── Shrouds ──
-    else if (product.includes('shroud') && !/corbel/.test(product)) {
-      rawResult = calculateShroud({
-        length: req.body.length,
-        width: req.body.width,
-        metal,
-        model: req.body.model || product,
-        tier: tierKey
-      });
-    }
+// ── Shrouds ──
+else if (
+  product.includes('shroud') ||
+  ['dynasty','majesty','monaco','royale','durham','monarch','regal',
+   'princess','prince','temptress','imperial','centurion','mountaineer',
+   'emperor'].some(name => product.includes(name))
+) {
+  rawResult = calculateShroud({
+    length: req.body.length,
+    width: req.body.width,
+    metal,
+    model: req.body.model || product
+  });
+
+  rawResult.tier = tierKey;
+  rawResult.tierMultiplier = 1;
+  rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
+}
 
     // ── Multi-Flue ──
     else if (product.includes('flat_top') || product.includes('hip') || product.includes('ridge')) {
