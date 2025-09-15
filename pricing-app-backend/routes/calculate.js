@@ -2,13 +2,31 @@ const express = require('express');
 const router = express.Router();
 
 const { calculateMultiPrice } = require('../pricing/calculateMulti');
-const { calculateChaseCover } = require('../pricing/calculateChaseCover');
+const { calculateChaseCover } = require('../pricing/calculateChaseCover'); // keep if used elsewhere
 const normalizeMetal = require('../utils/normalizeMetal');
-const { n, safeNum, toNum } = require('../utils/num');
-const { multiDiscrepancyDelta } = require('../utils/discrepancy');
-const { resolveTierWeight } = require('../utils/resolveTierWeight');
+const applyTierFactor = require('../utils/applyTierFactor');
+
 const multiFactors = require('../config/multiFactors');
+const multiDiscrepancies = require('../config/multi_discrepancies');
 const { banner } = require('../utils/logger');
+
+// ---------------------------------------------------------------------------
+// Inline numeric helpers (no ../utils/num import)
+// ---------------------------------------------------------------------------
+function toNum(v) {
+  const n = parseFloat(v);
+  return isNaN(n) ? 0 : n;
+}
+function safeNum(...vals) {
+  for (const v of vals) {
+    const n = parseFloat(v);
+    if (!isNaN(n)) return n;
+  }
+  return 0;
+}
+function n(val, digits = 2) {
+  return Number(val || 0).toFixed(digits);
+}
 
 // ============================================================================
 // POST /api/calculate
@@ -19,6 +37,7 @@ router.post('/', (req, res) => {
       Number.isFinite(+req.body.L) && Number.isFinite(+req.body.W) &&
       (req.body.metalKey || req.body.metalType || req.body.metal);
 
+    // normalize powdercoat once per request
     const powdercoat = String(req.body.powdercoat).toLowerCase() === 'true';
 
     let product   = req.body.product;
@@ -46,10 +65,9 @@ router.post('/', (req, res) => {
         let holesAdj = holesCount * 10;
         let unsqAdj = unsq ? 25 : 0;
 
-        const base_price = 100; // placeholder
+        // If you have a real chase calc, plug it here; placeholder kept as in your prior file
+        const base_price = 100;
         const final = Math.round((base_price + holesAdj + unsqAdj + Number.EPSILON) * 100) / 100;
-
-        let chasePrice = final;
 
         // >>> POWDERCOAT (CHASE): 30% bump if stainless
         console.log("💥 POWDERCOAT CHECK (chase):", {
@@ -59,13 +77,14 @@ router.post('/', (req, res) => {
           finalPriceBefore: final
         });
 
+        let chasePrice = final;
         if (powdercoat && /(ss|stainless)/i.test(resolvedMetalKey)) {
           const bumped = +(final * 1.3).toFixed(2);
           chasePrice = bumped;
           console.log("✅ POWDERCOAT APPLIED (chase):", { bumped });
         }
 
-        banner('CHASE COVER', [
+        banner?.('CHASE COVER', [
           `Metal: ${resolvedMetalKey}`,
           `Length: ${n(L)} Width: ${n(W)} Skirt: ${n(S)}`,
           `Hole Count: ${holesCount} Adj: ${n(holesAdj)}`,
@@ -134,22 +153,22 @@ router.post('/', (req, res) => {
       const metalType2 = normalizeMetal(req.body.metalType || req.body.metal);
       const tierKey = String(tier || 'elite').toLowerCase();
 
+      // factor row from config (no loadMultiFactors util)
       const factorRow = (multiFactors || []).find(f =>
         String(f.metal).toLowerCase() === metalType2 &&
         String(f.product).toLowerCase() === lowerProduct &&
         String(f.tier || 'elite').toLowerCase() === 'elite'
       );
-
       if (!factorRow) {
         return res.status(400).json({ error: `No factor found for ${lowerProduct} (${metalType2})` });
       }
 
       const rawBaseFactor = factorRow.factor || 0;
-      const delta = multiDiscrepancyDelta(metalType2, lowerProduct, tierKey);
+      const delta = (multiDiscrepancies?.[metalType2]?.[lowerProduct]?.[tierKey]) || 0;
       const baseFactor = +(rawBaseFactor + delta).toFixed(4);
 
       const adjustments = factorRow.adjustments || {};
-      const tierWeight = resolveTierWeight(tierKey);
+      const tierWeight = applyTierFactor(tierKey);
 
       const input = {
         lengthVal: safeNum(req.body.length, safeNum(req.body.L)),
@@ -180,7 +199,7 @@ router.post('/', (req, res) => {
         ? { ...out, product: lowerProduct, tier: tierKey, metal: metalType2, finalPrice: +priceNum.toFixed(2), price: +priceNum.toFixed(2) }
         : { ...out, product: lowerProduct, tier: tierKey, metal: metalType2 };
 
-      // >>> POWDERCOAT (MULTIFLUE): 30% bump if stainless
+      // >>> POWDERCOAT (MULTIFLUE): 30% bump AFTER tier multiplier
       console.log("💥 POWDERCOAT CHECK (multi):", {
         powdercoat: req.body.powdercoat,
         metalType2,
