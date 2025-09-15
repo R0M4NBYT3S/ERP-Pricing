@@ -286,11 +286,12 @@ router.post('/', (req, res) => {
         const base_price = Math.round((basePrice + Number.EPSILON) * 100) / 100;
         const final = Math.round((basePrice + holesAdj + unsqAdj + Number.EPSILON) * 100) / 100;
 
-        // >>> POWDERCOAT (CHASE/SHROUD): 30% bump if stainless
-        let adjustedFinal = final;
-        if (req.body.powdercoat && /^(ss24pol|ss24mil|stainless)/i.test(resolvedMetalKey)) {
-          adjustedFinal = +(adjustedFinal * 1.3).toFixed(2);
-        }
+// >>> POWDERCOAT (CHASE/SHROUD): 30% bump if stainless
+let adjustedFinal = final;
+if (req.body.powdercoat && /(ss|stainless)/i.test(resolvedMetalKey)) {
+  adjustedFinal = +(adjustedFinal * 1.3).toFixed(2);
+}
+
 
         banner('CHASE COVER', [
           `Metal: ${resolvedMetalKey}`,
@@ -359,12 +360,13 @@ router.post('/', (req, res) => {
           result.price = +priceNum.toFixed(2);
         }
 
-        // >>> POWDERCOAT (SHROUD): 30% bump if stainless
-        if (req.body.powdercoat && /^(ss24pol|ss24mil|stainless)/i.test(result.metal)) {
-          const bumped = +(result.finalPrice * 1.3).toFixed(2);
-          result.finalPrice = bumped;
-          result.price = bumped;
-        }
+// >>> POWDERCOAT (SHROUD): 30% bump if stainless
+if (req.body.powdercoat && /(ss|stainless)/i.test(result.metal)) {
+  const bumped = +(result.finalPrice * 1.3).toFixed(2);
+  result.finalPrice = bumped;
+  result.price = bumped;
+}
+
 
         return res.json(result);
       } catch (e) {
@@ -423,12 +425,13 @@ router.post('/', (req, res) => {
         ? { ...out, product: lowerProduct, tier: tierKey, metal: metalType2, finalPrice: +priceNum.toFixed(2), price: +priceNum.toFixed(2) }
         : { ...out, product: lowerProduct, tier: tierKey, metal: metalType2 };
 
-      // >>> POWDERCOAT (MULTIFLUE): 30% bump AFTER tier multiplier
-      if (req.body.powdercoat && /^(ss24pol|ss24mil|stainless)/i.test(metalType2)) {
-        const bumped = +(result.finalPrice * 1.3).toFixed(2);
-        result.finalPrice = bumped;
-        result.price = bumped;
-      }
+// >>> POWDERCOAT (MULTIFLUE): 30% bump AFTER tier multiplier
+if (req.body.powdercoat && /(ss|stainless)/i.test(metalType2)) {
+  const bumped = +(result.finalPrice * 1.3).toFixed(2);
+  result.finalPrice = bumped;
+  result.price = bumped;
+}
+
 
       return res.json(result);
     }
