@@ -4,30 +4,11 @@ const router = express.Router();
 const { calculateMultiPrice } = require('../pricing/calculateMulti');
 const { calculateChaseCover } = require('../pricing/calculateChaseCover');
 const normalizeMetal = require('../utils/normalizeMetal');
-const applyTierFactor = require('../utils/applyTierFactor');
-
+const { n, safeNum, toNum } = require('../utils/num');
+const { multiDiscrepancyDelta } = require('../utils/discrepancy');
+const { resolveTierWeight } = require('../utils/resolveTierWeight');
 const multiFactors = require('../config/multiFactors');
-const multiDiscrepancies = require('../config/multi_discrepancies');
-
-// ---------------------------------------------------------------------------
-// Inline numeric helpers (were originally in this file, not utils/num.js)
-// ---------------------------------------------------------------------------
-function toNum(v) {
-  const n = parseFloat(v);
-  return isNaN(n) ? 0 : n;
-}
-
-function safeNum(...vals) {
-  for (const v of vals) {
-    const n = parseFloat(v);
-    if (!isNaN(n)) return n;
-  }
-  return 0;
-}
-
-function n(val, digits = 2) {
-  return Number(val || 0).toFixed(digits);
-}
+const { banner } = require('../utils/logger');
 
 // ============================================================================
 // POST /api/calculate
@@ -65,10 +46,12 @@ router.post('/', (req, res) => {
         let holesAdj = holesCount * 10;
         let unsqAdj = unsq ? 25 : 0;
 
-        const base_price = 100; // placeholder for chase cover
+        const base_price = 100; // placeholder
         const final = Math.round((base_price + holesAdj + unsqAdj + Number.EPSILON) * 100) / 100;
 
-        // >>> POWDERCOAT (CHASE)
+        let chasePrice = final;
+
+        // >>> POWDERCOAT (CHASE): 30% bump if stainless
         console.log("💥 POWDERCOAT CHECK (chase):", {
           powdercoat: req.body.powdercoat,
           metal: resolvedMetalKey,
@@ -76,12 +59,21 @@ router.post('/', (req, res) => {
           finalPriceBefore: final
         });
 
-        let chasePrice = final;
         if (powdercoat && /(ss|stainless)/i.test(resolvedMetalKey)) {
           const bumped = +(final * 1.3).toFixed(2);
           chasePrice = bumped;
           console.log("✅ POWDERCOAT APPLIED (chase):", { bumped });
         }
+
+        banner('CHASE COVER', [
+          `Metal: ${resolvedMetalKey}`,
+          `Length: ${n(L)} Width: ${n(W)} Skirt: ${n(S)}`,
+          `Hole Count: ${holesCount} Adj: ${n(holesAdj)}`,
+          `Unsquare: ${unsq ? 'Yes' : 'No'} Adj: ${n(unsqAdj)}`,
+          `Size Category: ${sizeCategory}`,
+          `Tier: ${tierKey}`,
+          `Final Price: ${n(chasePrice)}`
+        ].join('\n'));
 
         const chaseDetails = {
           product: 'chase_cover',
@@ -112,7 +104,7 @@ router.post('/', (req, res) => {
         const tierKey = String(tier || 'elite').toLowerCase();
         const result = calculateShroud(req.body, tierKey);
 
-        // >>> POWDERCOAT (SHROUD)
+        // >>> POWDERCOAT (SHROUD): 30% bump if stainless
         console.log("💥 POWDERCOAT CHECK (shroud):", {
           powdercoat: req.body.powdercoat,
           metal: result.metal,
@@ -153,11 +145,11 @@ router.post('/', (req, res) => {
       }
 
       const rawBaseFactor = factorRow.factor || 0;
-      const delta = (multiDiscrepancies[metalType2]?.[lowerProduct]?.[tierKey]) || 0;
+      const delta = multiDiscrepancyDelta(metalType2, lowerProduct, tierKey);
       const baseFactor = +(rawBaseFactor + delta).toFixed(4);
 
       const adjustments = factorRow.adjustments || {};
-      const tierWeight = applyTierFactor(tierKey);
+      const tierWeight = resolveTierWeight(tierKey);
 
       const input = {
         lengthVal: safeNum(req.body.length, safeNum(req.body.L)),
@@ -188,7 +180,7 @@ router.post('/', (req, res) => {
         ? { ...out, product: lowerProduct, tier: tierKey, metal: metalType2, finalPrice: +priceNum.toFixed(2), price: +priceNum.toFixed(2) }
         : { ...out, product: lowerProduct, tier: tierKey, metal: metalType2 };
 
-      // >>> POWDERCOAT (MULTIFLUE)
+      // >>> POWDERCOAT (MULTIFLUE): 30% bump if stainless
       console.log("💥 POWDERCOAT CHECK (multi):", {
         powdercoat: req.body.powdercoat,
         metalType2,
