@@ -356,6 +356,10 @@ function DynamicForm() {
       // overwrite length/width with effective values
       length: effectiveLength,
       width: effectiveWidth,
+
+      // 🔑 NEW: include powdercoat flag
+      powdercoat: !!formData.powdercoat,
+
     };
 
     const url = `${API_BASE}/api/calculate`;
