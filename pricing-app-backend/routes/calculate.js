@@ -8,7 +8,26 @@ const applyTierFactor = require('../utils/applyTierFactor');
 
 const multiFactors = require('../config/multiFactors');
 const multiDiscrepancies = require('../config/multi_discrepancies');
-const { n, safeNum, toNum } = require('../utils/num');
+
+// ---------------------------------------------------------------------------
+// Inline numeric helpers (were originally in this file, not utils/num.js)
+// ---------------------------------------------------------------------------
+function toNum(v) {
+  const n = parseFloat(v);
+  return isNaN(n) ? 0 : n;
+}
+
+function safeNum(...vals) {
+  for (const v of vals) {
+    const n = parseFloat(v);
+    if (!isNaN(n)) return n;
+  }
+  return 0;
+}
+
+function n(val, digits = 2) {
+  return Number(val || 0).toFixed(digits);
+}
 
 // ============================================================================
 // POST /api/calculate
