@@ -286,10 +286,19 @@ router.post('/', (req, res) => {
         const base_price = Math.round((basePrice + Number.EPSILON) * 100) / 100;
         const final = Math.round((basePrice + holesAdj + unsqAdj + Number.EPSILON) * 100) / 100;
 
-// >>> POWDERCOAT (CHASE/SHROUD): 30% bump if stainless
+// >>> POWDERCOAT (CHASE): 30% bump if stainless
+console.log("💥 POWDERCOAT CHECK (chase):", {
+  powdercoat: req.body.powdercoat,
+  metal: resolvedMetalKey,
+  regexMatched: /(ss|stainless)/i.test(resolvedMetalKey),
+  finalPriceBefore: final
+});
+
 let adjustedFinal = final;
 if (req.body.powdercoat && /(ss|stainless)/i.test(resolvedMetalKey)) {
-  adjustedFinal = +(adjustedFinal * 1.3).toFixed(2);
+  const bumped = +(adjustedFinal * 1.3).toFixed(2);
+  adjustedFinal = bumped;
+  console.log("✅ POWDERCOAT APPLIED (chase):", { bumped });
 }
 
 
@@ -361,11 +370,23 @@ if (req.body.powdercoat && /(ss|stainless)/i.test(resolvedMetalKey)) {
         }
 
 // >>> POWDERCOAT (SHROUD): 30% bump if stainless
+console.log("💥 POWDERCOAT CHECK (shroud):", {
+  powdercoat: req.body.powdercoat,
+  metal: result.metal,
+  regexMatched: /(ss|stainless)/i.test(result.metal),
+  finalPriceBefore: result.finalPrice
+});
+
 if (req.body.powdercoat && /(ss|stainless)/i.test(result.metal)) {
   const bumped = +(result.finalPrice * 1.3).toFixed(2);
   result.finalPrice = bumped;
   result.price = bumped;
+  if (result.printout) {
+    result.printout.total = `Total Price (with Powdercoat): ${bumped.toFixed(2)}`;
+  }
+  console.log("✅ POWDERCOAT APPLIED (shroud):", { bumped });
 }
+
 
 
         return res.json(result);
@@ -437,9 +458,14 @@ if (req.body.powdercoat && /(ss|stainless)/i.test(metalType2)) {
   const bumped = +(result.finalPrice * 1.3).toFixed(2);
   result.finalPrice = bumped;
   result.price = bumped;
+
+  // update printout if it exists
+  if (result.printout) {
+    result.printout.total = `Total Price (with Powdercoat): ${bumped.toFixed(2)}`;
+  }
+
   console.log("✅ POWDERCOAT APPLIED:", { bumped });
 }
-
 
 
       return res.json(result);
