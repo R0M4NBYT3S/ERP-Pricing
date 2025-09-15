@@ -2,8 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { calculateMultiPrice } = require('../pricing/calculateMulti');
 const { calculateChaseCover } = require('../pricing/calculateChaseCover');
-const normalizeTierKey = require('../utils/normalizeTierKey');
-const normalizeMetalType = require('../utils/normalizeMetal');
+const normalizeMetal = require('../utils/normalizeMetal');
 const loadMultiFactors = require('../utils/loadMultiFactors');
 const { multiDiscrepancyDelta } = require('../utils/discrepancy');
 const { resolveTierWeight } = require('../utils/resolveTierWeight');
@@ -22,8 +21,8 @@ router.post('/', (req, res) => {
     const powdercoat = String(req.body.powdercoat).toLowerCase() === 'true';
 
     let product   = req.body.product;
-    let metalType = normalizeMetalType(req.body.metalType);
-    let metal     = normalizeMetalType(req.body.metal) || metalType;
+    let metalType = normalizeMetal(req.body.metalType);
+    let metal     = normalizeMetal(req.body.metal) || metalType;
     let tier      = req.body.tier;
 
     const productStr   = String(product || '').toLowerCase();
@@ -38,9 +37,9 @@ router.post('/', (req, res) => {
         const S = toNum(req.body.S ?? req.body.skirt);
         const unsq = !!req.body.unsquare;
 
-        const resolvedMetalKey = normalizeMetalType(req.body.metalKey || req.body.metalType || req.body.metal);
+        const resolvedMetalKey = normalizeMetal(req.body.metalKey || req.body.metalType || req.body.metal);
         const sizeCategory = `${L}x${W}`;
-        const tierKey = normalizeTierKey(tier);
+        const tierKey = String(tier || 'elite').toLowerCase();
 
         let holesCount = toNum(req.body.holes) || 0;
         let holesAdj = holesCount * 10;
@@ -103,7 +102,7 @@ router.post('/', (req, res) => {
         delete require.cache[require.resolve('../pricing/calculateShroud')];
         const { calculateShroud } = require('../pricing/calculateShroud');
 
-        const tierKey = normalizeTierKey(tier);
+        const tierKey = String(tier || 'elite').toLowerCase();
         const result = calculateShroud(req.body, tierKey);
 
         // >>> POWDERCOAT (SHROUD): 30% bump if stainless
@@ -133,8 +132,8 @@ router.post('/', (req, res) => {
 
     // ---------------------- MULTI-FLUE ----------------------
     if (lowerProduct.includes('flat_top') || lowerProduct.includes('hip') || lowerProduct.includes('ridge')) {
-      const metalType2 = normalizeMetalType(req.body.metalType || req.body.metal);
-      const tierKey = normalizeTierKey(tier);
+      const metalType2 = normalizeMetal(req.body.metalType || req.body.metal);
+      const tierKey = String(tier || 'elite').toLowerCase();
 
       const factorRow = (loadMultiFactors() || []).find(f =>
         String(f.metal).toLowerCase() === metalType2 &&
