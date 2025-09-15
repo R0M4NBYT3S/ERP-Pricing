@@ -426,11 +426,20 @@ if (req.body.powdercoat && /(ss|stainless)/i.test(result.metal)) {
         : { ...out, product: lowerProduct, tier: tierKey, metal: metalType2 };
 
 // >>> POWDERCOAT (MULTIFLUE): 30% bump AFTER tier multiplier
+console.log("💥 POWDERCOAT CHECK (multi):", {
+  powdercoat: req.body.powdercoat,
+  metalType2,
+  regexMatched: /(ss|stainless)/i.test(metalType2),
+  finalPriceBefore: result.finalPrice
+});
+
 if (req.body.powdercoat && /(ss|stainless)/i.test(metalType2)) {
   const bumped = +(result.finalPrice * 1.3).toFixed(2);
   result.finalPrice = bumped;
   result.price = bumped;
+  console.log("✅ POWDERCOAT APPLIED:", { bumped });
 }
+
 
 
       return res.json(result);
