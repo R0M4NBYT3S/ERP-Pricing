@@ -103,57 +103,57 @@ else if (
   return res.json(rawResult);
 }
 
-    // ── Multi-Flue ──
-    else if (product.includes('flat_top') || product.includes('hip') || product.includes('ridge')) {
-      const factorRow = (multiFactors || []).find(f =>
-        String(f.metal).toLowerCase() === metal &&
-        String(f.product).toLowerCase() === product &&
-        String(f.tier || 'elite').toLowerCase() === 'elite'
-      );
-      if (!factorRow) {
-        return res.status(400).json({ error: `No factor found for ${product} (${metal})` });
-      }
+// ── Multi-Flue ──
+else if (product.includes('flat_top') || product.includes('hip') || product.includes('ridge')) {
+  // Always look up with elite
+  const factorRow = (multiFactors || []).find(f =>
+    String(f.metal).toLowerCase() === metal &&
+    String(f.product).toLowerCase() === product &&
+    String(f.tier || 'elite').toLowerCase() === 'elite'
+  );
+  if (!factorRow) {
+    return res.status(400).json({ error: `No factor found for ${product} (${metal})` });
+  }
 
-      const rawBaseFactor = factorRow.factor || 0;
-      const delta = (multiDiscrepancyData?.[metal]?.[product]?.[tierKey]) || 0;
-      const baseFactor = +(rawBaseFactor + delta).toFixed(4);
+  const rawBaseFactor = factorRow.factor || 0;
+  const delta = (multiDiscrepancyData?.[metal]?.[product]?.[tierKey]) || 0;
+  const baseFactor = +(rawBaseFactor + delta).toFixed(4);
 
-      const input = {
-        lengthVal: req.body.length,
-        widthVal: req.body.width,
-        screenVal: req.body.screenHeight || req.body.screen,
-        overhangVal: req.body.lidOverhang || req.body.overhang,
-        insetVal: req.body.inset,
-        skirtVal: req.body.skirt,
-        pitchVal: req.body.pitch,
-        product,
-        metal,
-        tier: tierKey
-      };
+  const input = {
+    lengthVal: req.body.length,
+    widthVal: req.body.width,
+    screenVal: req.body.screenHeight || req.body.screen,
+    overhangVal: req.body.lidOverhang || req.body.overhang,
+    insetVal: req.body.inset,
+    skirtVal: req.body.skirt,
+    pitchVal: req.body.pitch,
+    product,
+    metal,
+    tier: 'elite'   // 🔑 always elite for factor lookup
+  };
 
-      rawResult = calculateMultiPrice(
-        input,
-        factorRow.adjustments,
-        baseFactor,
-        tierMultiplier,
-        tierKey
-      );
+  // Raw elite price
+  rawResult = calculateMultiPrice(
+    input,
+    factorRow.adjustments,
+    baseFactor,
+    1,          // no multiplier yet
+    'elite'
+  );
 
-      // Apply global adjustments for multi only
-      if (typeof rawResult.finalPrice !== 'number') {
-        const baseCandidate = rawResult.finalPrice || rawResult.price || rawResult.base_price;
-        if (typeof baseCandidate === 'number') {
-          rawResult.finalPrice = +(baseCandidate * tierMultiplier).toFixed(2);
-          rawResult.price = rawResult.finalPrice;
-        }
-      }
+  // Apply tier multiplier afterwards
+  if (typeof rawResult.finalPrice === 'number') {
+    rawResult.finalPrice = +(rawResult.finalPrice * tierMultiplier).toFixed(2);
+    rawResult.price = rawResult.finalPrice;
+  }
 
-      rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
-      rawResult.tier = tierKey;
-      rawResult.tierMultiplier = tierMultiplier;
+  // Powdercoat last
+  rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
+  rawResult.tier = tierKey;
+  rawResult.tierMultiplier = tierMultiplier;
 
-      return res.json(rawResult);
-    }
+  return res.json(rawResult);
+}
 
     // ── Unknown product ──
     else {
