@@ -57,49 +57,50 @@ router.post('/', (req, res) => {
     let rawResult;
 
     // ── Chase Covers ──
-    if (product.includes('chase')) {
-      const mappedTier = chaseShroudTierMap[tierKey] || 'elite';
-      rawResult = calculateChaseCover({
-        lengthVal: req.body.length || req.body.L,
-        widthVal: req.body.width || req.body.W,
-        skirtVal: req.body.skirt || req.body.S,
-        metalType: metal,
-        unsquare: req.body.unsquare,
-        holeCount: req.body.holes
-      }, mappedTier);
+   // ── Chase Covers ──
+if (product.includes('chase')) {
+  const mappedTier = chaseShroudTierMap[tierKey] || 'elite';
+  rawResult = calculateChaseCover({
+    lengthVal: req.body.length || req.body.L,
+    widthVal: req.body.width || req.body.W,
+    skirtVal: req.body.skirt || req.body.S,
+    metalType: metal,
+    unsquare: req.body.unsquare,
+    holeCount: req.body.holes
+  }, mappedTier);
 
-      if (rawResult.final_price != null) {
-        rawResult.finalPrice = rawResult.final_price;
-        rawResult.price = rawResult.final_price;
-      }
+  if (rawResult.final_price != null) {
+    rawResult.finalPrice = rawResult.final_price;
+    rawResult.price = rawResult.final_price;
+  }
 
-      rawResult.tier = mappedTier;
-      rawResult.tierMultiplier = 1;
-      rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
-      return res.json(rawResult);
-    }
+  rawResult.tier = mappedTier;       // ✅ keep long form
+  rawResult.tierMultiplier = 1;      // no multiplier, matrix already includes tiers
+  rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
+  return res.json(rawResult);
+}
 
-    // ── Shrouds ──
-    else if (
-      product.includes('shroud') ||
-      ['dynasty','majesty','monaco','royale','durham','monarch','regal',
-       'princess','prince','temptress','imperial','centurion','mountaineer',
-       'emperor'].some(name => product.includes(name))
-    ) {
-      const mappedTier = chaseShroudTierMap[tierKey] || 'elite';
-      rawResult = calculateShroud({
-        length: req.body.length,
-        width: req.body.width,
-        metal,
-        model: req.body.model || product,
-        tier: mappedTier
-      });
+// ── Shrouds ──
+else if (
+  product.includes('shroud') ||
+  ['dynasty','majesty','monaco','royale','durham','monarch','regal',
+   'princess','prince','temptress','imperial','centurion','mountaineer',
+   'emperor'].some(name => product.includes(name))
+) {
+  const mappedTier = chaseShroudTierMap[tierKey] || 'elite';
+  rawResult = calculateShroud({
+    length: req.body.length,
+    width: req.body.width,
+    metal,
+    model: req.body.model || product,
+    tier: mappedTier
+  });
 
-      rawResult.tier = mappedTier;
-      rawResult.tierMultiplier = 1;
-      rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
-      return res.json(rawResult);
-    }
+  rawResult.tier = mappedTier;       // ✅ keep long form
+  rawResult.tierMultiplier = 1;
+  rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
+  return res.json(rawResult);
+}
 
     // ── Multi-Flue ──
     else if (product.includes('flat_top') || product.includes('hip') || product.includes('ridge')) {
