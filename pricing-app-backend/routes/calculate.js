@@ -1,11 +1,13 @@
 const express = require('express');
 const router = express.Router();
+
 const { calculateMultiPrice } = require('../pricing/calculateMulti');
 const { calculateChaseCover } = require('../pricing/calculateChaseCover');
 const normalizeMetal = require('../utils/normalizeMetal');
-const loadMultiFactors = require('../utils/loadMultiFactors');
-const { multiDiscrepancyDelta } = require('../utils/discrepancy');
-const { resolveTierWeight } = require('../utils/resolveTierWeight');
+const applyTierFactor = require('../utils/applyTierFactor');
+
+const multiFactors = require('../config/multiFactors');
+const multiDiscrepancies = require('../config/multi_discrepancies');
 const { n, safeNum, toNum } = require('../utils/num');
 
 // ============================================================================
@@ -17,7 +19,6 @@ router.post('/', (req, res) => {
       Number.isFinite(+req.body.L) && Number.isFinite(+req.body.W) &&
       (req.body.metalKey || req.body.metalType || req.body.metal);
 
-    // normalize powdercoat flag once per request
     const powdercoat = String(req.body.powdercoat).toLowerCase() === 'true';
 
     let product   = req.body.product;
@@ -44,12 +45,11 @@ router.post('/', (req, res) => {
         let holesCount = toNum(req.body.holes) || 0;
         let holesAdj = holesCount * 10;
         let unsqAdj = unsq ? 25 : 0;
-        const base_price = 100; // placeholder
 
+        const base_price = 100; // placeholder for chase cover
         const final = Math.round((base_price + holesAdj + unsqAdj + Number.EPSILON) * 100) / 100;
-        let chasePrice = final;
 
-        // >>> POWDERCOAT (CHASE): 30% bump if stainless
+        // >>> POWDERCOAT (CHASE)
         console.log("💥 POWDERCOAT CHECK (chase):", {
           powdercoat: req.body.powdercoat,
           metal: resolvedMetalKey,
@@ -57,24 +57,14 @@ router.post('/', (req, res) => {
           finalPriceBefore: final
         });
 
+        let chasePrice = final;
         if (powdercoat && /(ss|stainless)/i.test(resolvedMetalKey)) {
           const bumped = +(final * 1.3).toFixed(2);
           chasePrice = bumped;
           console.log("✅ POWDERCOAT APPLIED (chase):", { bumped });
         }
 
-        banner('CHASE COVER', [
-          `Metal: ${resolvedMetalKey}`,
-          `Length: ${n(L)} Width: ${n(W)} Skirt: ${n(S)}`,
-          `Hole Count: ${holesCount} Adj: ${n(holesAdj)}`,
-          `Unsquare: ${unsq ? 'Yes' : 'No'} Adj: ${n(unsqAdj)}`,
-          `Size Category: ${sizeCategory}`,
-          `Tier: ${tierKey}`,
-          `Final Price: ${n(chasePrice)}`
-        ].join('\n'));
-
-        chaseAddOn = chasePrice;
-        chaseDetails = {
+        const chaseDetails = {
           product: 'chase_cover',
           tier: tierKey,
           metalType: resolvedMetalKey,
@@ -87,9 +77,7 @@ router.post('/', (req, res) => {
           price: chasePrice
         };
 
-        if (!isShroudModel) {
-          return res.json(chaseDetails);
-        }
+        return res.json(chaseDetails);
       } catch (err) {
         console.error('CHASE COVER ERROR:', err);
         return res.status(500).json({ error: 'CHASE_COVER', message: err.message });
@@ -97,7 +85,7 @@ router.post('/', (req, res) => {
     }
 
     // ---------------------- SHROUDS ----------------------
-    if ((lowerProduct.includes('shroud') || isShroudModel) && !/corbel/.test(productStr)) {
+    if ((lowerProduct.includes('shroud') || req.body.isShroudModel) && !/corbel/.test(productStr)) {
       try {
         delete require.cache[require.resolve('../pricing/calculateShroud')];
         const { calculateShroud } = require('../pricing/calculateShroud');
@@ -105,7 +93,7 @@ router.post('/', (req, res) => {
         const tierKey = String(tier || 'elite').toLowerCase();
         const result = calculateShroud(req.body, tierKey);
 
-        // >>> POWDERCOAT (SHROUD): 30% bump if stainless
+        // >>> POWDERCOAT (SHROUD)
         console.log("💥 POWDERCOAT CHECK (shroud):", {
           powdercoat: req.body.powdercoat,
           metal: result.metal,
@@ -135,21 +123,22 @@ router.post('/', (req, res) => {
       const metalType2 = normalizeMetal(req.body.metalType || req.body.metal);
       const tierKey = String(tier || 'elite').toLowerCase();
 
-      const factorRow = (loadMultiFactors() || []).find(f =>
+      const factorRow = (multiFactors || []).find(f =>
         String(f.metal).toLowerCase() === metalType2 &&
         String(f.product).toLowerCase() === lowerProduct &&
         String(f.tier || 'elite').toLowerCase() === 'elite'
       );
+
       if (!factorRow) {
         return res.status(400).json({ error: `No factor found for ${lowerProduct} (${metalType2})` });
       }
 
       const rawBaseFactor = factorRow.factor || 0;
-      const delta = multiDiscrepancyDelta(metalType2, lowerProduct, tierKey);
+      const delta = (multiDiscrepancies[metalType2]?.[lowerProduct]?.[tierKey]) || 0;
       const baseFactor = +(rawBaseFactor + delta).toFixed(4);
 
       const adjustments = factorRow.adjustments || {};
-      const tierWeight = resolveTierWeight(tierKey);
+      const tierWeight = applyTierFactor(tierKey);
 
       const input = {
         lengthVal: safeNum(req.body.length, safeNum(req.body.L)),
@@ -180,7 +169,7 @@ router.post('/', (req, res) => {
         ? { ...out, product: lowerProduct, tier: tierKey, metal: metalType2, finalPrice: +priceNum.toFixed(2), price: +priceNum.toFixed(2) }
         : { ...out, product: lowerProduct, tier: tierKey, metal: metalType2 };
 
-      // >>> POWDERCOAT (MULTIFLUE): 30% bump AFTER tier multiplier
+      // >>> POWDERCOAT (MULTIFLUE)
       console.log("💥 POWDERCOAT CHECK (multi):", {
         powdercoat: req.body.powdercoat,
         metalType2,
@@ -201,9 +190,12 @@ router.post('/', (req, res) => {
       return res.json(result);
     }
 
+    // Fallback
     return res.status(400).json({ error: 'Unknown product type', product });
   } catch (err) {
+    console.error('CALCULATE ROUTE ERROR:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
+
 module.exports = router;
