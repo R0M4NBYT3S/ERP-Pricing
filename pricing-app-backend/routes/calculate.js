@@ -46,22 +46,27 @@ router.post('/', (req, res) => {
 
     let rawResult;
 
-    // ── Chase Covers ──
-    if (product.includes('chase')) {
-      rawResult = calculateChaseCover({
-        lengthVal: req.body.length || req.body.L,
-        widthVal: req.body.width || req.body.W,
-        skirtVal: req.body.skirt || req.body.S,
-        metalType: metal,
-        unsquare: req.body.unsquare,
-        holeCount: req.body.holes
-      }, tierKey);
+// ── Chase Covers ──
+if (product.includes('chase')) {
+  const mappedTier = chaseShroudTierMap[tierKey] || 'elite';
+  rawResult = calculateChaseCover({
+    lengthVal: req.body.length || req.body.L,
+    widthVal: req.body.width || req.body.W,
+    skirtVal: req.body.skirt || req.body.S,
+    metalType: metal,
+    unsquare: req.body.unsquare,
+    holeCount: req.body.holes
+  }, mappedTier);
 
-      if (rawResult.final_price != null) {
-        rawResult.finalPrice = rawResult.final_price;
-        rawResult.price = rawResult.final_price;
-      }
-    }
+  if (rawResult.final_price != null) {
+    rawResult.finalPrice = rawResult.final_price;
+    rawResult.price = rawResult.final_price;
+  }
+
+  rawResult.tier = mappedTier;
+  rawResult.tierMultiplier = 1;
+  rawResult = applyPowdercoatIfNeeded(rawResult, powdercoat);
+}
 
 // ── Shrouds ──
 else if (
